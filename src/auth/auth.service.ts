@@ -1,26 +1,59 @@
-import { Injectable } from '@nestjs/common';
-import { CreateAuthDto } from './dto/create-auth.dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
+import { AdminUser } from 'src/entities/admin-user.entity';
+import { LoginDto } from './dto/login.dto';
+import { Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt'
 
 @Injectable()
 export class AuthService {
-  create(createAuthDto: CreateAuthDto) {
-    return 'This action adds a new auth';
+  constructor(
+    @InjectRepository(AdminUser)
+    private readonly adminUserRepository: Repository<AdminUser>,
+    private readonly jwtService: JwtService,
+  ){}
+
+  async validateUser(loginDto: LoginDto): Promise<AdminUser>{
+    const { email, password } = loginDto;
+
+    const admin = await this.adminUserRepository.findOne({
+      where: { email },
+      select: ['id', 'email', 'password_hash', 'is_super_admin', 'room_access'],
+    });
+
+    if (!admin){
+      throw new UnauthorizedException('Email ou senha incorretos');
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, admin.password_hash);
+    
+    if (!isPasswordValid){
+      throw new UnauthorizedException('Email ou senha incorretos');
+    }
+
+    return admin;
   }
 
-  findAll() {
-    return `This action returns all auth`;
-  }
+  async login(admin: AdminUser){
+    const payload = {
+      sub: admin.id,
+      email: admin.email,
+      isSuperAdmin: admin.is_super_admin,
+      roomAccess: admin.room_access,
+    };
 
-  findOne(id: number) {
-    return `This action returns a #${id} auth`;
-  }
+    const token = this.jwtService.sign(payload);
 
-  update(id: number, updateAuthDto: UpdateAuthDto) {
-    return `This action updates a #${id} auth`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} auth`;
+    return {
+      success: true,
+      user: {
+        id: admin.id,
+        email: admin.email,
+        room_access: admin.room_access,
+        is_super_admin: admin.is_super_admin,
+      },
+      token: token,
+    };
   }
 }
