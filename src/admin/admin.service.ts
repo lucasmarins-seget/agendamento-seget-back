@@ -5,6 +5,7 @@ import { AttendanceRecord } from 'src/entities/attendance-record.entity';
 import { FindOptionsWhere, Like, Repository } from 'typeorm';
 import { RejectBookingDto } from './dto/reject-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
+import { MailService } from 'src/mail/mail.service';
 
 type AdminUserPayload = {
   id: string;
@@ -20,6 +21,7 @@ export class AdminService {
         private readonly bookingRepository: Repository<Booking>,
         @InjectRepository(AttendanceRecord)
         private readonly attendanceRepository: Repository<AttendanceRecord>,
+        private readonly mailService: MailService,
     ){}
 
     private checkPermission(booking: Booking, user: AdminUserPayload){
@@ -136,7 +138,11 @@ export class AdminService {
 
         const savedBooking = await this.bookingRepository.save(booking);
 
-        // TODO: Enviar e-mail de aprovação (Fase 7)
+        await this.mailService.sendApprovalEmail(savedBooking);
+
+        for (const email of savedBooking.participantes) {
+            await this.mailService.sendAttendanceLink(savedBooking, email);
+        }
 
         return {
             success: true,
@@ -150,7 +156,7 @@ export class AdminService {
         };
     }
 
-    async reject(id: string, RejectBookingDto: RejectBookingDto, user: AdminUserPayload){
+    async reject(id: string, rejectBookingDto: RejectBookingDto, user: AdminUserPayload){
         const booking = await this.bookingRepository.findOneBy({ id });
         if (!booking) {
             throw new NotFoundException('Agendamento não encontrado');
@@ -166,7 +172,7 @@ export class AdminService {
 
         const savedBooking = await this.bookingRepository.save(booking);
 
-        // TODO: Enviar e-mail de recusa (Fase 7) [cite: 351, 623]
+        await this.mailService.sendRejectionEmail(savedBooking);
 
         return {
             success: true,

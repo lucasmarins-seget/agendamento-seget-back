@@ -1,34 +1,36 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, UseGuards, Request, Query, ParseUUIDPipe, Put } from '@nestjs/common';
 import { SettingsService } from './settings.service';
-import { CreateSettingDto } from './dto/create-setting.dto';
-import { UpdateSettingDto } from './dto/update-setting.dto';
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { CreateBlockDto } from './dto/create-block.dto';
+import { UpdateComputersDto } from './dto/update-computers.dto';
 
-@Controller('settings')
+@UseGuards(JwtAuthGuard)
+@Controller('admin/settings')
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
-  @Post()
-  create(@Body() createSettingDto: CreateSettingDto) {
-    return this.settingsService.create(createSettingDto);
+  @Post('blocks')
+  createBlock(@Body() createBlockDto: CreateBlockDto, @Request() req){
+    return this.settingsService.createBlock(createBlockDto, req.user);
   }
 
-  @Get()
-  findAll() {
-    return this.settingsService.findAll();
+  @Get('blocks')
+  findBlocks(@Query('room') room: string) {
+    return this.settingsService.findBlocks(room);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.settingsService.findOne(+id);
+  @Delete('blocks/:id')
+  removeBlock(@Param('id', ParseUUIDPipe) id: string) {
+    return this.settingsService.removeBlock(id);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateSettingDto: UpdateSettingDto) {
-    return this.settingsService.update(+id, updateSettingDto);
+  @Get('computers')
+  getComputers() {
+    return this.settingsService.getComputers();
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.settingsService.remove(+id);
+  @Put('computers')
+  updateComputers(@Body() updateComputersDto: UpdateComputersDto) {
+    return this.settingsService.updateComputers(updateComputersDto);
   }
 }

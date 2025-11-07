@@ -5,6 +5,7 @@ import { RoomBlock } from '../entities/room-block.entity';
 import { RoomSetting } from '../entities/room-setting.entity';
 import { Repository } from 'typeorm';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { MailService } from 'src/mail/mail.service';
 
 @Injectable()
 export class BookingsService {
@@ -16,6 +17,7 @@ export class BookingsService {
     private readonly roomBlockRepository: Repository<RoomBlock>,
     @InjectRepository(RoomSetting)
     private readonly roomSettingRepository: Repository<RoomSetting>,
+    private readonly mailService: MailService,
   ) {}
 
   // Método principal para criar agendamento
@@ -70,6 +72,7 @@ export class BookingsService {
 
     // --- 3. Ações Pós-Criação --- [cite: 135-138]
     
+    await this.mailService.sendBookingConfirmation(savedBooking);
     // TODO: Implementar envio de e-mail para solicitante [cite: 136]
     // TODO: Implementar envio de link para participantes [cite: 137]
     // TODO: Implementar notificação para admin [cite: 138]
