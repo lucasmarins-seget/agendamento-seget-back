@@ -1,18 +1,38 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  ParseUUIDPipe,
+  Param,
+  Get,
+} from '@nestjs/common';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { SearchBookingDto } from './dto/search-booking.dto';
 
 // Rota base: /api/bookings
 @Controller('bookings')
 export class BookingsController {
   constructor(private readonly bookingsService: BookingsService) {}
 
-  // Rota: POST /api/bookings/create 
+  // Rota: POST /api/bookings/create
   @Post('create')
   create(@Body() createBookingDto: CreateBookingDto) {
     // 1. O 'ValidationPipe' (do main.ts) valida o 'createBookingDto'
     // 2. Se for válido, o Nest chama este método
     return this.bookingsService.create(createBookingDto);
+  }
+
+  @Post('search')
+  @HttpCode(HttpStatus.OK)
+  search(@Body() searchBookingDto: SearchBookingDto) {
+    return this.bookingsService.search(searchBookingDto);
+  }
+  @Get(':id')
+  findPublicOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.bookingsService.findPublicOne(id);
   }
 
   // TODO: Adicionar as outras rotas públicas

@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Body, Param, Delete, UseGuards, Request, Query, ParseUUIDPipe, Put } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Delete,
+  UseGuards,
+  Request,
+  Query,
+  ParseUUIDPipe,
+  Put,
+} from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { CreateBlockDto } from './dto/create-block.dto';
@@ -10,7 +22,7 @@ export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
   @Post('blocks')
-  createBlock(@Body() createBlockDto: CreateBlockDto, @Request() req){
+  createBlock(@Body() createBlockDto: CreateBlockDto, @Request() req) {
     return this.settingsService.createBlock(createBlockDto, req.user);
   }
 

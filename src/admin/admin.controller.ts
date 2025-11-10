@@ -1,23 +1,23 @@
-import { 
-  Controller, 
-  Get, 
-  Body, 
-  Patch, 
-  Param, 
-  UseGuards, 
-  Query, 
-  Request, 
+import {
+  Controller,
+  Get,
+  Body,
+  Patch,
+  Param,
+  UseGuards,
+  Query,
+  Request,
   Put,
   ParseUUIDPipe,
   HttpCode,
-  HttpStatus
+  HttpStatus,
+  Res,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { RejectBookingDto } from './dto/reject-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
-import { request } from 'http';
-
+import type { Response } from 'express';
 
 @UseGuards(JwtAuthGuard)
 @Controller('admin')
@@ -33,7 +33,7 @@ export class AdminController {
     @Query('name') name: string,
     @Query('room') room: string,
     @Request() req,
-  ){
+  ) {
     const filters = { status, date, name, room };
     const pagination = { page: +page, limit: +limit };
     return this.adminService.findAll(pagination, filters, req.user);
@@ -45,7 +45,7 @@ export class AdminController {
   }
 
   @Patch('bookings/:id/approve')
-  approve(@Param('id', ParseUUIDPipe) id: string, @Request() req){
+  approve(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
     return this.adminService.approve(id, req.user);
   }
 
@@ -55,7 +55,7 @@ export class AdminController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() rejectBookingDto: RejectBookingDto,
     @Request() request,
-  ){
+  ) {
     return this.adminService.reject(id, rejectBookingDto, request.user);
   }
 
@@ -63,18 +63,33 @@ export class AdminController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateBookingDto: UpdateBookingDto,
-    @Request() request, 
-  ){
+    @Request() request,
+  ) {
     return this.adminService.update(id, updateBookingDto, request.user);
   }
 
   @Get('bookings/:id/attendance')
-  getAttendance(@Param('id', ParseUUIDPipe) id: string, @Request() req){
+  getAttendance(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
     return this.adminService.getAttendance(id, req.user);
   }
 
   @Get('bookings/:id/attendance/pdf')
-  getAttendancePdf(){
-    return { message: 'Rota de PDF a ser implementada' };
+  async getAttendancePdf(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req,
+    @Res() res: Response,
+  ) {
+    const pdfBuffer = await this.adminService.generateAttendancePdf(
+      id,
+      req.user,
+    );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': pdfBuffer.length,
+      'Content-Disposition': `attachment; filename=lista-presenca-${id}.pdf`,
+    });
+
+    res.end(pdfBuffer);
   }
 }

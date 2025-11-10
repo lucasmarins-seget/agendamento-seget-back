@@ -1,4 +1,11 @@
-import { IsArray, IsDateString, IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateBlockDto {
   @IsIn(['receituario', 'escola_fazendaria', 'delta'])

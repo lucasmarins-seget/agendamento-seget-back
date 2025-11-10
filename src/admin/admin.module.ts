@@ -5,17 +5,15 @@ import { AuthModule } from 'src/auth/auth.module'; // 1. Importar AuthModule
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Booking } from 'src/entities/booking.entity';
 import { AttendanceRecord } from 'src/entities/attendance-record.entity';
+import { MailModule } from 'src/mail/mail.module';
 
 @Module({
   imports: [
     AuthModule,
-    TypeOrmModule.forFeature([
-      Booking,
-      AttendanceRecord,
-    ]),
+    TypeOrmModule.forFeature([Booking, AttendanceRecord]),
+    MailModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],
 })
-
-export class AdminModule{}
+export class AdminModule {}

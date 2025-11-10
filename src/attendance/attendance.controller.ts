@@ -9,13 +9,12 @@ export class AttendanceController {
 
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
-  verifyEmail(@Body() verifyEmailDto: VerifyEmailDto){
+  verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
     return this.attendanceService.verifyEmail(verifyEmailDto);
   }
 
   @Post('confirm')
-  confirmAttendance(@Body() confirmAttendanceDto: ConfirmAttendanceDto){
-    return this.attendanceService.confirmAttendance(confirmAttendanceDto)
+  confirmAttendance(@Body() confirmAttendanceDto: ConfirmAttendanceDto) {
+    return this.attendanceService.confirmAttendance(confirmAttendanceDto);
   }
-  
 }

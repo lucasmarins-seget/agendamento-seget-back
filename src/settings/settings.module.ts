@@ -7,13 +7,7 @@ import { RoomBlock } from 'src/entities/room-block.entity';
 import { RoomSetting } from 'src/entities/room-setting.entity';
 
 @Module({
-  imports: [
-    AuthModule,
-    TypeOrmModule.forFeature([
-      RoomBlock,
-      RoomSetting
-    ]),
-  ],
+  imports: [AuthModule, TypeOrmModule.forFeature([RoomBlock, RoomSetting])],
   controllers: [SettingsController],
   providers: [SettingsService],
 })

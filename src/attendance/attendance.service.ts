@@ -6,6 +6,7 @@ import { Employee } from 'src/entities/employee.entity';
 import { Repository } from 'typeorm';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ConfirmAttendanceDto } from './dto/confirm-attendance.dto';
+import { MailService } from 'src/mail/mail.service';
 
 @Injectable()
 export class AttendanceService {
@@ -16,29 +17,34 @@ export class AttendanceService {
     private readonly bookingRepository: Repository<Booking>,
     @InjectRepository(Employee)
     private readonly employeeRepository: Repository<Employee>,
-  ){}
+    private readonly mailService: MailService,
+  ) {}
 
   async verifyEmail(verifyEmailDto: VerifyEmailDto) {
     const { email, bookingId } = verifyEmailDto;
 
     const booking = await this.bookingRepository.findOneBy({
       id: bookingId,
-      status: 'approved'
+      status: 'approved',
     });
 
     if (!booking) {
-      throw new NotFoundException('Agendamento não encontrado ou não aprovado.');
+      throw new NotFoundException(
+        'Agendamento não encontrado ou não aprovado.',
+      );
     }
 
     const emailInList = booking.participantes.some(
       (pEmail) => pEmail.toLowerCase() === email.toLowerCase(),
     );
     if (!emailInList) {
-      throw new NotFoundException('Este e-mail não está na lista de convidados.');
+      throw new NotFoundException(
+        'Este e-mail não está na lista de convidados.',
+      );
     }
 
     const employee = await this.employeeRepository.findOneBy({
-      email: email.toLowerCase()
+      email: email.toLowerCase(),
     });
 
     return {
@@ -55,14 +61,16 @@ export class AttendanceService {
 
     const booking = await this.bookingRepository.findOneBy({
       id: bookingId,
-      status: 'approved'
+      status: 'approved',
     });
-    if(!booking) {
-      throw new NotFoundException('Agendamento não encontrado ou não aprovado.');
+    if (!booking) {
+      throw new NotFoundException(
+        'Agendamento não encontrado ou não aprovado.',
+      );
     }
 
     const employee = await this.employeeRepository.findOneBy({
-      email: email.toLowerCase()
+      email: email.toLowerCase(),
     });
 
     let attendance = await this.attendanceRepository.findOneBy({
@@ -87,7 +95,8 @@ export class AttendanceService {
     }
 
     const savedRecord = await this.attendanceRepository.save(attendance);
-    // TODO: Enviar e-mail de confirmação de presença (Fase 7) [cite: 45, 658]
+
+    await this.mailService.sendAttendanceConfirmation(savedRecord, booking);
 
     return {
       success: true,

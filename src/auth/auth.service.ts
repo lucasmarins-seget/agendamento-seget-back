@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { AdminUser } from 'src/entities/admin-user.entity';
 import { LoginDto } from './dto/login.dto';
 import { Repository } from 'typeorm';
-import * as bcrypt from 'bcrypt'
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
@@ -12,9 +12,9 @@ export class AuthService {
     @InjectRepository(AdminUser)
     private readonly adminUserRepository: Repository<AdminUser>,
     private readonly jwtService: JwtService,
-  ){}
+  ) {}
 
-  async validateUser(loginDto: LoginDto): Promise<AdminUser>{
+  async validateUser(loginDto: LoginDto): Promise<AdminUser> {
     const { email, password } = loginDto;
 
     const admin = await this.adminUserRepository.findOne({
@@ -22,20 +22,20 @@ export class AuthService {
       select: ['id', 'email', 'password_hash', 'is_super_admin', 'room_access'],
     });
 
-    if (!admin){
+    if (!admin) {
       throw new UnauthorizedException('Email ou senha incorretos');
     }
 
     const isPasswordValid = await bcrypt.compare(password, admin.password_hash);
-    
-    if (!isPasswordValid){
+
+    if (!isPasswordValid) {
       throw new UnauthorizedException('Email ou senha incorretos');
     }
 
     return admin;
   }
 
-  async login(admin: AdminUser){
+  async login(admin: AdminUser) {
     const payload = {
       sub: admin.id,
       email: admin.email,

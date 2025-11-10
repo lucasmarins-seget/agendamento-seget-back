@@ -1,11 +1,24 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Booking } from '../entities/booking.entity';
 import { RoomBlock } from '../entities/room-block.entity';
 import { RoomSetting } from '../entities/room-setting.entity';
-import { Repository } from 'typeorm';
+import {
+  Repository,
+  FindOptionsWhere,
+  Like,
+  In,
+  LessThan,
+  MoreThan,
+} from 'typeorm';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { MailService } from 'src/mail/mail.service';
+import { SearchBookingDto } from './dto/search-booking.dto';
+import { AdminUser } from 'src/entities/admin-user.entity';
 
 @Injectable()
 export class BookingsService {
@@ -17,6 +30,8 @@ export class BookingsService {
     private readonly roomBlockRepository: Repository<RoomBlock>,
     @InjectRepository(RoomSetting)
     private readonly roomSettingRepository: Repository<RoomSetting>,
+    @InjectRepository(AdminUser)
+    private readonly adminUserRepository: Repository<AdminUser>,
     private readonly mailService: MailService,
   ) {}
 
@@ -24,33 +39,94 @@ export class BookingsService {
   async create(createBookingDto: CreateBookingDto) {
     // --- 1. Validações de Regra de Negócio ---
 
-    // Regra: Data não pode ser final de semana [cite: 116, 669]
+    // Regra: Data não pode ser final de semana
     const dataAgendamento = new Date(createBookingDto.data);
     const diaDaSemana = dataAgendamento.getUTCDay(); // 0 = Domingo, 6 = Sábado
     if (diaDaSemana === 0 || diaDaSemana === 6) {
-      throw new BadRequestException('Não é permitido agendar em finais de semana.');
+      throw new BadRequestException(
+        'Não é permitido agendar em finais de semana.',
+      );
     }
-    
-    // Regra: Verificar bloqueios ativos [cite: 118, 677]
-    // TODO: Implementar lógica de verificação de bloqueios
-    // (buscar em `roomBlockRepository` por data, hora e sala)
 
-    // Regra: Verificar disponibilidade de horário/sala [cite: 117, 676]
-    // TODO: Implementar lógica de verificação de conflitos
-    // (buscar em `bookingRepository` por agendamentos aprovados no mesmo horário)
+    const {
+      data,
+      horaInicio,
+      horaFim,
+      room,
+      tipoReserva,
+      numeroParticipantes,
+    } = createBookingDto;
 
-    // Regra: Para Escola Fazendária, verificar computadores [cite: 119, 678]
-    // TODO: Implementar lógica de verificação de computadores
-    // (buscar em `roomSettingRepository` e comparar com agendamentos)
-    
+    // --- CORREÇÃO DE TIMEZONE ---
+    // NÃO USAMOS MAIS 'dataObj'. 'data' já é a string "2025-11-24".
+    const dataStr = data;
+    // --- FIM DA CORREÇÃO ---
+
+    // 1. Regra: Verificar bloqueios
+    const blocks = await this.roomBlockRepository.findBy({ room });
+    const isBlocked = blocks.some(
+      (b) => b.dates.includes(dataStr) && b.times.includes(horaInicio),
+    );
+    if (isBlocked) {
+      throw new BadRequestException(
+        'Este horário está bloqueado pela administração.',
+      );
+    }
+
+    // 2. Regra: Verificar conflitos
+    const existingBooking = await this.bookingRepository.findOne({
+      where: {
+        data: dataStr, // <-- USA A STRING "2025-11-24"
+        room,
+        status: In(['approved', 'pending']),
+        hora_inicio: LessThan(horaFim),
+        hora_fim: MoreThan(horaInicio),
+      },
+    });
+
+    if (existingBooking) {
+      throw new BadRequestException(
+        'Horário indisponível. Já existe um agendamento neste período.',
+      );
+    }
+    // Regra: Para Escola Fazendária, verificar computadores
+    if (room === 'escola_fazendaria' && tipoReserva === 'computador') {
+      const setting = await this.roomSettingRepository.findOneBy({
+        room: 'escola_fazendaria',
+      });
+      const availableComputers = setting?.available_computers || 0;
+
+      const concurrentBookings = await this.bookingRepository.find({
+        where: {
+          data: dataStr,
+          room: 'escola_fazendaria',
+          tipo_reserva: 'computador',
+          status: In(['approved', 'pending']),
+          hora_inicio: LessThan(horaFim),
+          hora_fim: MoreThan(horaInicio),
+        },
+      });
+
+      const computersInUse = concurrentBookings.reduce(
+        (sum, b) => sum + b.numero_participantes,
+        0,
+      );
+      if (computersInUse + numeroParticipantes > availableComputers) {
+        const remaining = availableComputers - computersInUse;
+        throw new BadRequestException(
+          `Não há computadores suficientes. ${remaining > 0 ? `Restam apenas ${remaining}` : 'Não há computadores disponíveis'}.`,
+        );
+      }
+    }
+
     // --- 2. Preparar e Salvar no Banco ---
 
     // Mapeia os dados do DTO para a Entidade
     const newBooking = this.bookingRepository.create({
       ...createBookingDto,
-      data: dataAgendamento, // Converte a string para Date
-      status: 'pending', // [cite: 487, 644]
-      
+      data: dataStr,
+      status: 'pending',
+
       // Renomeando campos do DTO para a entidade (camelCase para snake_case)
       room_name: createBookingDto.roomName,
       tipo_reserva: createBookingDto.tipoReserva,
@@ -67,15 +143,21 @@ export class BookingsService {
       wifi_todos: createBookingDto.wifiTodos,
       conexao_cabo: createBookingDto.conexaoCabo,
     });
-    
+
     const savedBooking = await this.bookingRepository.save(newBooking);
 
     // --- 3. Ações Pós-Criação --- [cite: 135-138]
-    
+
     await this.mailService.sendBookingConfirmation(savedBooking);
-    // TODO: Implementar envio de e-mail para solicitante [cite: 136]
-    // TODO: Implementar envio de link para participantes [cite: 137]
-    // TODO: Implementar notificação para admin [cite: 138]
+    const admins = await this.adminUserRepository.find({
+      where: [{ room_access: savedBooking.room }, { is_super_admin: true }],
+    });
+
+    const adminEmails = [...new Set(admins.map((a) => a.email))];
+
+    for (const email of adminEmails) {
+      await this.mailService.sendAdminNotification(savedBooking, email);
+    }
 
     // --- 4. Retornar Resposta de Sucesso ---
     return {
@@ -87,5 +169,71 @@ export class BookingsService {
     };
   }
 
-  // TODO: Adicionar os outros métodos (search, findOne)
+  async search(searchBookingDto: SearchBookingDto) {
+    const { room, date, purpose } = searchBookingDto;
+
+    const where: FindOptionsWhere<Booking> = {
+      status: 'approved',
+    };
+
+    if (room) where.room = room;
+    if (date) where.data = date;
+    if (purpose) where.finalidade = Like(`%${purpose}%`);
+
+    const results = await this.bookingRepository.find({
+      where,
+      order: { data: 'ASC', hora_inicio: 'ASC' },
+      select: [
+        'id',
+        'room',
+        'data',
+        'nome_completo',
+        'setor_solicitante',
+        'hora_inicio',
+        'hora_fim',
+        'finalidade',
+        'status',
+      ],
+    });
+
+    return {
+      results: results.map((b) => ({
+        id: b.id,
+        room: b.room,
+        date: new Date(`${b.data}T12:00:00Z`).toLocaleDateString('pt-BR'),
+        name: b.nome_completo,
+        sector: b.setor_solicitante,
+        time: `${b.hora_inicio} às ${b.hora_fim}`,
+        purpose: b.finalidade,
+        status: b.status,
+      })),
+    };
+  }
+
+  async findPublicOne(id: string) {
+    const booking = await this.bookingRepository.findOneBy({
+      id,
+      status: 'approved',
+    });
+
+    if (!booking) {
+      throw new NotFoundException(
+        'Agendamento não encontrado ou não está aprovado.',
+      );
+    }
+
+    // Retorna os dados públicos [cite: 169-180]
+    return {
+      id: booking.id,
+      room: booking.room,
+      roomName: booking.room_name,
+      date: new Date(`${booking.data}T12:00:00Z`).toLocaleDateString('pt-BR'),
+      startTime: booking.hora_inicio,
+      endTime: booking.hora_fim,
+      name: booking.nome_completo,
+      sector: booking.setor_solicitante,
+      purpose: booking.finalidade,
+      status: booking.status,
+    };
+  }
 }

@@ -5,14 +5,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AttendanceRecord } from 'src/entities/attendance-record.entity';
 import { Booking } from 'src/entities/booking.entity';
 import { Employee } from 'src/entities/employee.entity';
+import { MailModule } from 'src/mail/mail.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      AttendanceRecord,
-      Booking,
-      Employee
-    ]),
+    TypeOrmModule.forFeature([AttendanceRecord, Booking, Employee]),
+    MailModule,
   ],
   controllers: [AttendanceController],
   providers: [AttendanceService],

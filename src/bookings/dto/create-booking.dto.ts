@@ -11,82 +11,105 @@ import {
   Matches,
 } from 'class-validator';
 
-export class CreateBookingDto{
-    @IsString() @IsNotEmpty()
-    room: string;
+export class CreateBookingDto {
+  @IsString()
+  @IsNotEmpty()
+  room: string;
 
-    @IsString() @IsNotEmpty()
-    roomName: string;
+  @IsString()
+  @IsNotEmpty()
+  roomName: string;
 
-    @IsString() @IsNotEmpty()
-    tipoReserva?: string;
+  @IsString()
+  @IsOptional()
+  tipoReserva?: string;
 
-    @IsString() @IsNotEmpty()
-    @Matches(/^[a-zA-Z\s]*$/, { message: 'nome não pode conter números' })
-    nomeCompleto: string;
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^[a-zA-Z\s]*$/, { message: 'nome não pode conter números' })
+  nomeCompleto: string;
 
-    @IsString() @IsNotEmpty()
-    setorSolicitante: string;
-    
-    @IsString() @IsNotEmpty()
-    responsavel: string;
+  @IsString()
+  @IsNotEmpty()
+  setorSolicitante: string;
 
-    @IsString() @MinLength(10) @MaxLength(11)
-    telefone: string;
+  @IsString()
+  @IsNotEmpty()
+  responsavel: string;
 
-    @IsEmail()
-    email: string;
+  @IsString()
+  @MinLength(10)
+  @MaxLength(11)
+  telefone: string;
 
-    @IsDateString()
-    data: string;
+  @IsEmail()
+  email: string;
 
-    @IsString() @IsNotEmpty()
-    horaInicio: string; //
+  @IsDateString()
+  data: string;
 
-    @IsString() @IsNotEmpty()
-    horaFim: string; //
+  @IsString()
+  @IsNotEmpty()
+  horaInicio: string; //
 
-    @IsNumber()
-    numeroParticipantes: number; //
+  @IsString()
+  @IsNotEmpty()
+  horaFim: string; //
 
-    @IsArray() @IsEmail({}, { each: true })
-    participantes: string[]; //
+  @IsNumber()
+  numeroParticipantes: number; //
 
-    @IsString() @IsNotEmpty()
-    finalidade: string; //
+  @IsArray()
+  @IsEmail({}, { each: true })
+  participantes: string[]; //
 
-    @IsString() @IsNotEmpty()
-    descricao: string; //
+  @IsString()
+  @IsNotEmpty()
+  finalidade: string; //
 
-    // --- Equipamentos ---
-    @IsString() @IsNotEmpty()
-    projetor: string; //
+  @IsString()
+  @IsNotEmpty()
+  descricao: string; //
 
-    @IsString() @IsOptional()
-    somProjetor?: string; //
+  // --- Equipamentos ---
+  @IsString()
+  @IsNotEmpty()
+  projetor: string; //
 
-    @IsString() @IsNotEmpty()
-    internet: string; //
+  @IsString()
+  @IsOptional()
+  somProjetor?: string; //
 
-    @IsString() @IsOptional()
-    wifiTodos?: string; //
+  @IsString()
+  @IsNotEmpty()
+  internet: string; //
 
-    @IsString() @IsOptional()
-    conexaoCabo?: string; //
+  @IsString()
+  @IsOptional()
+  wifiTodos?: string; //
 
-    // --- Específicos Escola --- [cite: 104-108]
-    @IsString() @IsOptional()
-    softwareEspecifico?: string; //
+  @IsString()
+  @IsOptional()
+  conexaoCabo?: string; //
 
-    @IsString() @IsOptional()
-    qualSoftware?: string; //
+  // --- Específicos Escola --- [cite: 104-108]
+  @IsString()
+  @IsOptional()
+  softwareEspecifico?: string; //
 
-    @IsString() @IsOptional()
-    papelaria?: string; //
+  @IsString()
+  @IsOptional()
+  qualSoftware?: string; //
 
-    @IsString() @IsOptional()
-    materialExterno?: string; //
+  @IsString()
+  @IsOptional()
+  papelaria?: string; //
 
-    @IsString() @IsOptional()
-    apoioEquipe?: string;
+  @IsString()
+  @IsOptional()
+  materialExterno?: string; //
+
+  @IsString()
+  @IsOptional()
+  apoioEquipe?: string;
 }
