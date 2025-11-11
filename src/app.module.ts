@@ -10,6 +10,7 @@ import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { MailModule } from './mail/mail.module';
 import { MailService } from './mail/mail.service';
+import { EmployeesModule } from './admin/employees/employees.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { MailService } from './mail/mail.service';
     AttendanceModule,
     SettingsModule,
     MailModule,
+    EmployeesModule
   ],
   controllers: [AppController],
   providers: [AppService, MailService],

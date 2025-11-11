@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Booking } from 'src/entities/booking.entity';
@@ -11,6 +12,10 @@ import { RejectBookingDto } from './dto/reject-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
 import { MailService } from 'src/mail/mail.service';
 import PDFDocument from 'pdfkit';
+import { AdminUser } from 'src/entities/admin-user.entity';
+import { CreateAdminDto } from 'src/auth/dto/create-admin.dto';
+import * as bcrypt from 'bcrypt';
+import { UpdateAdminDto } from './dto/update-admin.dto';
 
 type AdminUserPayload = {
   id: string;
@@ -36,6 +41,8 @@ export class AdminService {
     private readonly bookingRepository: Repository<Booking>,
     @InjectRepository(AttendanceRecord)
     private readonly attendanceRepository: Repository<AttendanceRecord>,
+    @InjectRepository(AdminUser)
+    private readonly adminUserRepository: Repository<AdminUser>,
     private readonly mailService: MailService,
   ) {}
 
@@ -373,5 +380,96 @@ export class AdminService {
       });
       doc.end();
     });
+  }
+
+  async createAdmin(createAdminDto: CreateAdminDto) {
+    const { email, password, isSuperAdmin, roomAccess } = createAdminDto;
+
+    const existingUser = await this.adminUserRepository.findOneBy({ email });
+    if (existingUser) {
+      throw new ConflictException('Este e-mail já está em uso.');
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    const newUser = this.adminUserRepository.create({
+      email,
+      password_hash: passwordHash,
+      is_super_admin: isSuperAdmin,
+      room_access: roomAccess || null,
+    });
+
+    await this.adminUserRepository.save(newUser);
+
+    const { password_hash, ...result } = newUser;
+    return result;
+  }
+
+  async findAllAdmins() {
+    const admins = await this.adminUserRepository.find({
+      order: { email: 'ASC' },
+      // O 'select: false' na entidade já esconde o password_hash
+    });
+    return admins;
+  }
+
+  async findOneAdmin(id: string) {
+    const admin = await this.adminUserRepository.findOneBy({ id });
+    if (!admin) {
+      throw new NotFoundException('Administrador não encontrado.');
+    }
+    return admin;
+  }
+
+  async updateAdmin(id: string, updateAdminDto: UpdateAdminDto) {
+    // 1. Busca o admin
+    const admin = await this.findOneAdmin(id);
+
+    // 2. Se o email estiver sendo mudado, checa se o novo email já existe
+    if (updateAdminDto.email && updateAdminDto.email !== admin.email) {
+      const existing = await this.adminUserRepository.findOneBy({ 
+        email: updateAdminDto.email 
+      });
+      if (existing) {
+        throw new ConflictException('O e-mail fornecido já está em uso.');
+      }
+    }
+
+    // 3. Se a senha estiver sendo mudada, criptografa a nova senha
+    if (updateAdminDto.password) {
+      const salt = await bcrypt.genSalt(10);
+      admin.password_hash = await bcrypt.hash(updateAdminDto.password, salt);
+    }
+
+    // 4. Atualiza os outros campos
+    if (updateAdminDto.email) {
+      admin.email = updateAdminDto.email;
+    }
+    if (typeof updateAdminDto.isSuperAdmin === 'boolean') {
+      admin.is_super_admin = updateAdminDto.isSuperAdmin;
+    }
+    if (updateAdminDto.roomAccess !== undefined) {
+      admin.room_access = updateAdminDto.roomAccess || null;
+    }
+
+    // 5. Salva
+    const updatedAdmin = await this.adminUserRepository.save(admin);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password_hash, ...result } = updatedAdmin;
+    return result;
+  }
+
+  async removeAdmin(id: string) {
+    // 1. Busca o admin para garantir que ele existe
+    const admin = await this.findOneAdmin(id);
+    
+    // 2. Remove
+    await this.adminUserRepository.remove(admin);
+    
+    return {
+      success: true,
+      message: 'Administrador removido com sucesso.'
+    };
   }
 }

@@ -17,7 +17,7 @@ export class AdminUser {
   password_hash: string; // [cite: 532]
 
   @Column({ type: 'varchar', length: 50, nullable: true })
-  room_access: string; // [cite: 533]
+  room_access: string | null;
 
   @Column({ type: 'boolean', default: false })
   is_super_admin: boolean; // [cite: 534]
