@@ -22,7 +22,9 @@ export class AttendanceService {
 
   async verifyEmail(verifyEmailDto: VerifyEmailDto) {
     const { email, bookingId } = verifyEmailDto;
+    const verifyingEmail = email.toLowerCase();
 
+    // 1. Busca o agendamento
     const booking = await this.bookingRepository.findOneBy({
       id: bookingId,
       status: 'approved',
@@ -34,24 +36,41 @@ export class AttendanceService {
       );
     }
 
-    const emailInList = booking.participantes.some(
-      (pEmail) => pEmail.toLowerCase() === email.toLowerCase(),
-    );
-    if (!emailInList) {
-      throw new NotFoundException(
-        'Este e-mail não está na lista de convidados.',
-      );
-    }
-
     const employee = await this.employeeRepository.findOneBy({
-      email: email.toLowerCase(),
+      email: verifyingEmail,
     });
 
+    if (employee) {
+      // Se for colaborador, retorna o nome dele.
+      return {
+        exists: true,
+        userData: {
+          name: employee.full_name,
+          isEmployee: true,
+        },
+      };
+    }
+
+    // CASO 2: É o Solicitante?
+    const solicitanteEmail = booking.email.toLowerCase();
+    const isSolicitante = verifyingEmail === solicitanteEmail;
+
+    if (isSolicitante) {
+      return {
+        exists: true,
+        userData: {
+          name: booking.nome_completo,
+          isEmployee: false,
+        },
+      };
+    }
+
+    // CASO 3: É um Convidado (não é colaborador, não é solicitante)
     return {
       exists: true,
       userData: {
-        name: employee?.full_name || '',
-        isEmployee: !!employee,
+        name: '', 
+        isEmployee: false,
       },
     };
   }
