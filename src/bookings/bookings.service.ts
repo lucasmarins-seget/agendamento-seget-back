@@ -57,10 +57,7 @@ export class BookingsService {
       numeroParticipantes,
     } = createBookingDto;
 
-    // --- CORREÇÃO DE TIMEZONE ---
-    // NÃO USAMOS MAIS 'dataObj'. 'data' já é a string "2025-11-24".
     const dataStr = data;
-    // --- FIM DA CORREÇÃO ---
 
     // 1. Regra: Verificar bloqueios
     const blocks = await this.roomBlockRepository.findBy({ room });
@@ -146,7 +143,7 @@ export class BookingsService {
 
     const savedBooking = await this.bookingRepository.save(newBooking);
 
-    // --- 3. Ações Pós-Criação --- [cite: 135-138]
+    // --- 3. Ações Pós-Criação ---
 
     await this.mailService.sendBookingConfirmation(savedBooking);
     const admins = await this.adminUserRepository.find({
@@ -170,15 +167,15 @@ export class BookingsService {
   }
 
   async search(searchBookingDto: SearchBookingDto) {
-    const { room, date, purpose } = searchBookingDto;
+    const { room, date, name, status, sector } = searchBookingDto;
 
-    const where: FindOptionsWhere<Booking> = {
-      status: 'approved',
-    };
-
+    const where: FindOptionsWhere<Booking> = {};
+    
+    if (name) where.nome_completo = Like(`%${name}%`);
+    if (status) where.status = status;
+    if (sector) where.setor_solicitante = Like(`%${sector}%`);
     if (room) where.room = room;
     if (date) where.data = date;
-    if (purpose) where.finalidade = Like(`%${purpose}%`);
 
     const results = await this.bookingRepository.find({
       where,
@@ -191,7 +188,6 @@ export class BookingsService {
         'setor_solicitante',
         'hora_inicio',
         'hora_fim',
-        'finalidade',
         'status',
       ],
     });
@@ -199,12 +195,11 @@ export class BookingsService {
     return {
       results: results.map((b) => ({
         id: b.id,
-        room: b.room,
+        room_name: b.room_name,
         date: new Date(`${b.data}T12:00:00Z`).toLocaleDateString('pt-BR'),
         name: b.nome_completo,
         sector: b.setor_solicitante,
         time: `${b.hora_inicio} às ${b.hora_fim}`,
-        purpose: b.finalidade,
         status: b.status,
       })),
     };
@@ -213,7 +208,6 @@ export class BookingsService {
   async findPublicOne(id: string) {
     const booking = await this.bookingRepository.findOneBy({
       id,
-      status: 'approved',
     });
 
     if (!booking) {
@@ -222,17 +216,14 @@ export class BookingsService {
       );
     }
 
-    // Retorna os dados públicos [cite: 169-180]
     return {
       id: booking.id,
-      room: booking.room,
       roomName: booking.room_name,
       date: new Date(`${booking.data}T12:00:00Z`).toLocaleDateString('pt-BR'),
       startTime: booking.hora_inicio,
       endTime: booking.hora_fim,
       name: booking.nome_completo,
       sector: booking.setor_solicitante,
-      purpose: booking.finalidade,
       status: booking.status,
     };
   }
