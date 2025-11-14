@@ -182,7 +182,7 @@ export class BookingsService {
       order: { data: 'ASC', hora_inicio: 'ASC' },
       select: [
         'id',
-        'room',
+        'room_name',
         'data',
         'nome_completo',
         'setor_solicitante',
@@ -195,7 +195,7 @@ export class BookingsService {
     return {
       results: results.map((b) => ({
         id: b.id,
-        room_name: b.room_name,
+        room: b.room_name,
         date: new Date(`${b.data}T12:00:00Z`).toLocaleDateString('pt-BR'),
         name: b.nome_completo,
         sector: b.setor_solicitante,
