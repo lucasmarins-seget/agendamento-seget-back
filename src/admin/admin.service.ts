@@ -202,7 +202,7 @@ export class AdminService {
     }
     this.checkPermission(booking, user);
 
-    booking.status = 'reject';
+    booking.status = 'rejected';
     booking.rejected_by = user.email;
     booking.rejected_at = new Date();
     booking.rejection_reason = rejectBookingDto.reason ?? null;
