@@ -3,11 +3,11 @@ import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 
 export class CreateEmployeeDto {
   @IsString()
   @IsNotEmpty()
-  fullName: string;
+  fullName: string; 
 
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email: string; 
 
   @IsString()
   @IsOptional()

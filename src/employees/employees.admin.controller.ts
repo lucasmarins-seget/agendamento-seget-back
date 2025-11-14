@@ -12,10 +12,10 @@ import {
   HttpStatus 
 } from '@nestjs/common';
 import { EmployeesService } from './employees.service';
-import { CreateEmployeeDto } from './dto/create-employee.dto';
-import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { SuperAdminGuard } from 'src/auth/guards/super-admin.guard';
+import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { UpdateEmployeeDto } from './dto/update-employee.dto';
 
 // 1. Define a rota base para /api/admin/employees
 @Controller('admin/employees')
