@@ -40,7 +40,7 @@ export class EmployeesService {
   async findAll() {
     // Retorna todos, ordenados por nome
     return await this.employeeRepository.find({
-      select: ['id','full_name'],
+      select: ['id','full_name', 'email'],
       order: { full_name: 'ASC' }
     });
   }
