@@ -60,7 +60,6 @@ export class AdminService {
   }
 
   async findAll(pagination: any, filters: any, user: AdminUserPayload) {
-    const { page, limit } = pagination;
     const where: FindOptionsWhere<Booking> = {};
 
     if (!user.isSuperAdmin) {
@@ -73,11 +72,11 @@ export class AdminService {
     if (filters.date) where.data = filters.date;
     if (filters.name) where.nome_completo = Like(`%${filters.name}%`);
 
+    // Retorna TODOS os agendamentos sem paginação no backend
+    // A paginação será feita no frontend, separada por status
     const [results, total] = await this.bookingRepository.findAndCount({
       where,
-      order: { created_at: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
+      order: { data: 'DESC', created_at: 'DESC' },
       select: [
         'id',
         'room',
@@ -95,9 +94,9 @@ export class AdminService {
       bookings: results,
       pagination: {
         total,
-        page,
-        limit,
-        totalpages: Math.ceil(total / limit),
+        page: 1,
+        limit: total,
+        totalpages: 1,
       },
     };
   }

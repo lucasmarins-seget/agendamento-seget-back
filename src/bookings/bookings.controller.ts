@@ -30,6 +30,16 @@ export class BookingsController {
   search(@Body() searchBookingDto: SearchBookingDto) {
     return this.bookingsService.search(searchBookingDto);
   }
+
+  // GET /api/bookings/available-hours/:room/:date - Retorna horários ocupados
+  @Get('available-hours/:room/:date')
+  getOccupiedHours(
+    @Param('room') room: string,
+    @Param('date') date: string,
+  ) {
+    return this.bookingsService.getOccupiedHours(room, date);
+  }
+
   @Get(':id')
   findPublicOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.bookingsService.findPublicOne(id);

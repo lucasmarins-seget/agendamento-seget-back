@@ -227,4 +227,48 @@ export class BookingsService {
       status: booking.status,
     };
   }
+
+  // Novo método: Retorna horários ocupados para uma sala e data
+  async getOccupiedHours(room: string, date: string) {
+    // Busca todos os agendamentos para essa sala e data que NÃO foram recusados
+    const bookings = await this.bookingRepository.find({
+      where: {
+        room,
+        data: date,
+        status: In(['approved', 'pending']),
+      },
+      select: ['hora_inicio', 'hora_fim'],
+    });
+
+    // Extrai os horários ocupados
+    const occupiedHours = new Set<string>();
+    
+    bookings.forEach((booking) => {
+      const [startHour, startMin] = booking.hora_inicio.split(':').map(Number);
+      const [endHour, endMin] = booking.hora_fim.split(':').map(Number);
+      
+      // Adiciona o horário de início como ocupado
+      occupiedHours.add(booking.hora_inicio);
+      
+      // Adiciona todos os horários parcialmente sobrepostos
+      const hours = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+      hours.forEach((hour) => {
+        const [h, m] = hour.split(':').map(Number);
+        const hourInMinutes = h * 60 + m;
+        const startInMinutes = startHour * 60 + startMin;
+        const endInMinutes = endHour * 60 + endMin;
+        
+        // Se o horário faz sobreposição com o agendamento, marca como ocupado
+        if (hourInMinutes >= startInMinutes && hourInMinutes < endInMinutes) {
+          occupiedHours.add(hour);
+        }
+      });
+    });
+
+    return {
+      room,
+      date,
+      occupiedHours: Array.from(occupiedHours).sort(),
+    };
+  }
 }
