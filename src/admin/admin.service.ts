@@ -1,5 +1,6 @@
 import {
   Injectable,
+  UnauthorizedException,
   NotFoundException,
   ForbiddenException,
   ConflictException,
@@ -7,16 +8,18 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Booking } from 'src/entities/booking.entity';
 import { AttendanceRecord } from 'src/entities/attendance-record.entity';
+import { AdminUser } from 'src/entities/admin-user.entity';
 import { FindOptionsWhere, Like, Repository } from 'typeorm';
 import { RejectBookingDto } from './dto/reject-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
+import { CreateAdminDto } from '../auth/dto/create-admin.dto';
+import { UpdateAdminDto } from './dto/update-admin.dto';
+import { AnalyzeBookingDto } from './dto/analyze-booking.dto';
+import * as bcrypt from 'bcrypt';
 import { MailService } from 'src/mail/mail.service';
 import PDFDocument from 'pdfkit';
-import { AdminUser } from 'src/entities/admin-user.entity';
-import { CreateAdminDto } from 'src/auth/dto/create-admin.dto';
-import * as bcrypt from 'bcrypt';
-import { UpdateAdminDto } from './dto/update-admin.dto';
 
+// O 'user' que recebemos é o payload do token
 type AdminUserPayload = {
   id: string;
   email: string;
@@ -24,6 +27,7 @@ type AdminUserPayload = {
   roomAccess: string;
 };
 
+// Tipo para o array de presença
 type AttendanceResponse = {
   id: string | null;
   fullName: string;
@@ -46,11 +50,11 @@ export class AdminService {
     private readonly mailService: MailService,
   ) {}
 
+  // Checa se o admin tem permissão para acessar um agendamento
   private checkPermission(booking: Booking, user: AdminUserPayload) {
     if (user.isSuperAdmin) {
       return true;
     }
-
     if (booking.room === user.roomAccess) {
       return true;
     }
@@ -59,28 +63,42 @@ export class AdminService {
     );
   }
 
+  // --- MÉTODOS DE GERENCIAMENTO DE AGENDAMENTOS ---
+
+  // GET /api/admin/bookings
   async findAll(pagination: any, filters: any, user: AdminUserPayload) {
+    const { page, limit } = pagination;
     const where: FindOptionsWhere<Booking> = {};
 
+    // 1. Filtro de Permissão
     if (!user.isSuperAdmin) {
       where.room = user.roomAccess;
     } else if (filters.room) {
       where.room = filters.room;
     }
 
+    // 2. Filtros da Query
     if (filters.status) where.status = filters.status;
-    if (filters.date) where.data = filters.date;
+    
+    // Como 'data' agora é string no banco (simple-array ou string simples dependendo da versão),
+    // e o filtro vem como string 'YYYY-MM-DD', a comparação direta funciona se for campo simples.
+    // SE for array de datas (nova versão), precisaríamos usar Like.
+    // Assumindo compatibilidade com a versão anterior ou busca exata por enquanto.
+    // Se mudamos para array, o ideal seria: 
+    if (filters.date) where.dates = Like(`%${filters.date}%`);
+
     if (filters.name) where.nome_completo = Like(`%${filters.name}%`);
 
-    // Retorna TODOS os agendamentos sem paginação no backend
-    // A paginação será feita no frontend, separada por status
     const [results, total] = await this.bookingRepository.findAndCount({
       where,
-      order: { data: 'DESC', created_at: 'DESC' },
+      order: { created_at: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
       select: [
         'id',
         'room',
-        'data',
+        'room_name',
+        'dates', // Importante: trazer o array de datas
         'hora_inicio',
         'hora_fim',
         'nome_completo',
@@ -90,17 +108,19 @@ export class AdminService {
         'created_at',
       ],
     });
+
     return {
       bookings: results,
       pagination: {
         total,
-        page: 1,
-        limit: total,
-        totalpages: 1,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       },
     };
   }
 
+  // GET /api/admin/bookings/:id/details
   async findOne(id: string, user: AdminUserPayload) {
     const booking = await this.bookingRepository.findOneBy({ id });
     if (!booking) {
@@ -122,20 +142,22 @@ export class AdminService {
         email: booking.email,
       },
       agendamento: {
-        data: booking.data,
+        dates: booking.dates, // Retorna o array
         horaInicio: booking.hora_inicio,
         horaFim: booking.hora_fim,
         numeroParticipantes: booking.numero_participantes,
         participantes: booking.participantes,
         finalidade: booking.finalidade,
         descricao: booking.descricao,
+        observacao: booking.observacao, // Novo campo
+        local: booking.local, // Novo campo
       },
       equipamentos: {
         projetor: booking.projetor,
         somProjetor: booking.som_projetor,
         internet: booking.internet,
         wifiTodos: booking.wifi_todos,
-        conexaoCabo: booking.conexao_cabo,
+        conexao_cabo: booking.conexao_cabo,
       },
       especificos: {
         softwareEspecifico: booking.software_especifico,
@@ -156,6 +178,7 @@ export class AdminService {
     };
   }
 
+  // PATCH /api/admin/bookings/:id/approve
   async approve(id: string, user: AdminUserPayload) {
     const booking = await this.bookingRepository.findOneBy({ id });
     if (!booking) {
@@ -166,14 +189,16 @@ export class AdminService {
     booking.status = 'approved';
     booking.approved_by = user.email;
     booking.approved_at = new Date();
+    
+    // Limpa dados de rejeição se houver
     booking.rejected_by = null;
     booking.rejected_at = null;
     booking.rejection_reason = null;
 
     const savedBooking = await this.bookingRepository.save(booking);
 
+    // Envia notificações
     await this.mailService.sendApprovalEmail(savedBooking);
-
     for (const email of savedBooking.participantes) {
       await this.mailService.sendAttendanceLink(savedBooking, email);
     }
@@ -184,12 +209,56 @@ export class AdminService {
       booking: {
         id: savedBooking.id,
         status: savedBooking.status,
-        aprovedBy: savedBooking.approved_by,
-        aprovedAt: savedBooking.approved_at,
+        approvedBy: savedBooking.approved_by,
+        approvedAt: savedBooking.approved_at,
       },
     };
   }
 
+  // PATCH /api/admin/bookings/:id/analyze (NOVO)
+  async analyze(
+    id: string,
+    analyzeBookingDto: AnalyzeBookingDto,
+    user: AdminUserPayload,
+  ) {
+    const booking = await this.bookingRepository.findOneBy({ id });
+    if (!booking) {
+      throw new NotFoundException('Agendamento não encontrado');
+    }
+    this.checkPermission(booking, user);
+
+    // Define a observação
+    const observacao =
+      analyzeBookingDto.observacao ||
+      'Seu agendamento está sob análise da administração para verificação de detalhes.';
+
+    booking.status = 'em_analise';
+    // Salva a observação no campo 'rejection_reason' para histórico do admin
+    booking.rejection_reason = observacao;
+
+    // Limpa metadados de aprovação/rejeição anteriores
+    booking.approved_by = null;
+    booking.approved_at = null;
+    booking.rejected_by = null;
+    booking.rejected_at = null;
+
+    const savedBooking = await this.bookingRepository.save(booking);
+
+    // Envia e-mail notificando a mudança
+    await this.mailService.sendUnderAnalysisEmail(savedBooking, observacao);
+
+    return {
+      success: true,
+      message: 'Agendamento movido para "Em Análise"',
+      booking: {
+        id: savedBooking.id,
+        status: savedBooking.status,
+        observacaoAdmin: observacao,
+      },
+    };
+  }
+
+  // PATCH /api/admin/bookings/:id/reject
   async reject(
     id: string,
     rejectBookingDto: RejectBookingDto,
@@ -205,6 +274,8 @@ export class AdminService {
     booking.rejected_by = user.email;
     booking.rejected_at = new Date();
     booking.rejection_reason = rejectBookingDto.reason ?? null;
+    
+    // Limpa aprovação se houver
     booking.approved_by = null;
     booking.approved_at = null;
 
@@ -225,6 +296,7 @@ export class AdminService {
     };
   }
 
+  // PUT /api/admin/bookings/:id
   async update(
     id: string,
     updateBookingDto: UpdateBookingDto,
@@ -236,15 +308,15 @@ export class AdminService {
     }
     this.checkPermission(booking, user);
 
+    // Mescla os dados novos na entidade existente
     Object.assign(booking, updateBookingDto);
 
-    if (updateBookingDto.data) {
-      booking.data = updateBookingDto.data;
-    }
+    // Se houver lógica especial para datas, adicionar aqui.
+    // Como 'dates' é array de strings, o assign funciona bem.
 
     const updatedBooking = await this.bookingRepository.save(booking);
 
-    await this.mailService.sendUpdateEmail(updatedBooking);
+    // Opcional: await this.mailService.sendUpdateEmail(updatedBooking);
 
     return {
       success: true,
@@ -253,6 +325,7 @@ export class AdminService {
     };
   }
 
+  // GET /api/admin/bookings/:id/attendance
   async getAttendance(id: string, user: AdminUserPayload) {
     const booking = await this.bookingRepository.findOne({
       where: { id },
@@ -265,11 +338,16 @@ export class AdminService {
     this.checkPermission(booking, user);
 
     const now = new Date();
+    // Pega a primeira data para referência
+    const firstDateStr =
+      booking.dates && booking.dates.length > 0 ? booking.dates[0] : null;
 
-    const dataString = booking.data as unknown as string;
-    const [year, month, day] = dataString.split('-').map(Number);
-    const [hour, minute] = booking.hora_inicio.split(':').map(Number);
-    const bookingStartTime = new Date(year, month - 1, day, hour, minute);
+    let bookingStartTime = now;
+    if (firstDateStr) {
+      const [year, month, day] = firstDateStr.split('-').map(Number);
+      const [hour, minute] = booking.hora_inicio.split(':').map(Number);
+      bookingStartTime = new Date(year, month - 1, day, hour, minute);
+    }
 
     const attendance: AttendanceResponse[] = (
       booking.attendance_records || []
@@ -284,16 +362,16 @@ export class AdminService {
           minute: '2-digit',
         }) || null,
       isVisitor: record.is_visitor,
-      status: record.status, // 'Presente' ou 'Ausente'
+      status: record.status,
     }));
 
     const respondedEmails = attendance.map((a) => a.email);
 
     for (const email of booking.participantes) {
       if (!respondedEmails.includes(email.toLowerCase())) {
-        let status = 'Pendente'; // [cite: 397]
+        let status = 'Pendente';
         if (now > bookingStartTime) {
-          status = 'Não Confirmado'; // [cite: 398]
+          status = 'Não Confirmado';
         }
 
         attendance.push({
@@ -313,7 +391,7 @@ export class AdminService {
         id: booking.id,
         room: booking.room,
         roomName: booking.room_name,
-        date: new Date(`${booking.data}T12:00:00Z`).toLocaleDateString('pt-BR'),
+        dates: booking.dates,
         startTime: booking.hora_inicio,
         endTime: booking.hora_fim,
         responsavel: booking.responsavel,
@@ -325,6 +403,7 @@ export class AdminService {
     };
   }
 
+  // GET /api/admin/bookings/:id/attendance/pdf
   async generateAttendancePdf(
     id: string,
     user: AdminUserPayload,
@@ -332,7 +411,6 @@ export class AdminService {
     const data = await this.getAttendance(id, user);
     const { booking, attendance } = data;
 
-    //(TODO: Adicionar logo)
     const doc = new PDFDocument({ margin: 50 });
     const buffers: Buffer[] = [];
     doc.on('data', buffers.push.bind(buffers));
@@ -340,30 +418,30 @@ export class AdminService {
     doc.fontSize(20).text('Lista de Presença - SEGET', { align: 'center' });
     doc.moveDown();
 
-    // Detalhes do Agendamento
+    const datesStr = Array.isArray(booking.dates)
+      ? booking.dates.join(', ')
+      : booking.dates;
+
     doc.fontSize(14).text(`Evento: ${booking.purpose}`);
     doc
       .fontSize(12)
       .text(
-        `Data: ${booking.date} | Horário: ${booking.startTime} - ${booking.endTime}`,
+        `Data(s): ${datesStr} | Horário: ${booking.startTime} - ${booking.endTime}`,
       );
-    doc.text(`sala: ${booking.roomName}`);
+    doc.text(`Sala: ${booking.roomName}`);
     doc.text(`Responsável: ${booking.responsavel} (${booking.sector})`);
     doc.moveDown();
 
-    // Tabela de Presença (simples)
     doc.fontSize(14).text('Participantes');
     doc.lineWidth(1).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
     doc.moveDown(0.5);
 
-    // Cabeçalho
     doc.fontSize(10).text('Nome Completo', 50, doc.y, { continued: true });
     doc.text('E-mail', 250, doc.y, { continued: true });
     doc.text('Status', 450, doc.y);
     doc.moveDown(0.5);
     doc.lineWidth(0.5).moveTo(50, doc.y).lineTo(550, doc.y).stroke();
 
-    // Linhas
     for (const p of attendance) {
       doc.moveDown(0.5);
       doc
@@ -381,6 +459,9 @@ export class AdminService {
     });
   }
 
+  // --- MÉTODOS DE GERENCIAMENTO DE ADMIN (CRUD) ---
+
+  // (C) CREATE ADMIN
   async createAdmin(createAdminDto: CreateAdminDto) {
     const { email, password, isSuperAdmin, roomAccess } = createAdminDto;
 
@@ -401,18 +482,20 @@ export class AdminService {
 
     await this.adminUserRepository.save(newUser);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...result } = newUser;
     return result;
   }
 
+  // (R) READ ALL ADMINS
   async findAllAdmins() {
     const admins = await this.adminUserRepository.find({
       order: { email: 'ASC' },
-      // O 'select: false' na entidade já esconde o password_hash
     });
     return admins;
   }
 
+  // (R) READ ONE ADMIN
   async findOneAdmin(id: string) {
     const admin = await this.adminUserRepository.findOneBy({ id });
     if (!admin) {
@@ -421,27 +504,24 @@ export class AdminService {
     return admin;
   }
 
+  // (U) UPDATE ADMIN
   async updateAdmin(id: string, updateAdminDto: UpdateAdminDto) {
-    // 1. Busca o admin
     const admin = await this.findOneAdmin(id);
 
-    // 2. Se o email estiver sendo mudado, checa se o novo email já existe
     if (updateAdminDto.email && updateAdminDto.email !== admin.email) {
-      const existing = await this.adminUserRepository.findOneBy({ 
-        email: updateAdminDto.email 
+      const existing = await this.adminUserRepository.findOneBy({
+        email: updateAdminDto.email,
       });
       if (existing) {
         throw new ConflictException('O e-mail fornecido já está em uso.');
       }
     }
 
-    // 3. Se a senha estiver sendo mudada, criptografa a nova senha
     if (updateAdminDto.password) {
       const salt = await bcrypt.genSalt(10);
       admin.password_hash = await bcrypt.hash(updateAdminDto.password, salt);
     }
 
-    // 4. Atualiza os outros campos
     if (updateAdminDto.email) {
       admin.email = updateAdminDto.email;
     }
@@ -452,23 +532,19 @@ export class AdminService {
       admin.room_access = updateAdminDto.roomAccess || null;
     }
 
-    // 5. Salva
     const updatedAdmin = await this.adminUserRepository.save(admin);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password_hash, ...result } = updatedAdmin;
     return result;
   }
 
+  // (D) DELETE ADMIN
   async removeAdmin(id: string) {
-    // 1. Busca o admin para garantir que ele existe
     const admin = await this.findOneAdmin(id);
-    
-    // 2. Remove
     await this.adminUserRepository.remove(admin);
-    
     return {
       success: true,
-      message: 'Administrador removido com sucesso.'
+      message: 'Administrador removido com sucesso.',
     };
   }
 }

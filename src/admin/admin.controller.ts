@@ -23,6 +23,7 @@ import type { Response } from 'express';
 import { SuperAdminGuard } from 'src/auth/guards/super-admin.guard';
 import { CreateAdminDto } from 'src/auth/dto/create-admin.dto';
 import { UpdateAdminDto } from './dto/update-admin.dto';
+import { AnalyzeBookingDto } from './dto/analyze-booking.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('admin')
@@ -130,5 +131,14 @@ export class AdminController {
     });
 
     res.end(pdfBuffer);
+  }
+
+  @Patch('bookings/:id/analyze')
+  analyze(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() analyzeBookingDto: AnalyzeBookingDto, // 2. USE O DTO AQUI
+    @Request() req,
+  ) {
+    return this.adminService.analyze(id, analyzeBookingDto, req.user);
   }
 }
