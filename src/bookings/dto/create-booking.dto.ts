@@ -4,11 +4,11 @@ import {
   IsNotEmpty,
   IsOptional,
   IsArray,
-  IsDateString,
   IsNumber,
   MinLength,
   MaxLength,
   Matches,
+  ArrayMinSize,
 } from 'class-validator';
 
 export class CreateBookingDto {
@@ -26,7 +26,7 @@ export class CreateBookingDto {
 
   @IsString()
   @IsNotEmpty()
-  @Matches(/^[a-zA-Z\s]*$/, { message: 'nome não pode conter números' })
+  @Matches(/^[a-zA-Z\s]*$/, { message: 'Nome não pode conter números' })
   nomeCompleto: string;
 
   @IsString()
@@ -43,71 +43,80 @@ export class CreateBookingDto {
   telefone: string;
 
   @IsEmail()
+  @IsNotEmpty()
   email: string;
 
-  @IsDateString()
-  data: string;
+  // Agora aceita um array de strings
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMinSize(1)
+  dates: string[];
 
   @IsString()
   @IsNotEmpty()
-  horaInicio: string; //
+  horaInicio: string;
 
   @IsString()
   @IsNotEmpty()
-  horaFim: string; //
+  horaFim: string;
 
   @IsNumber()
-  numeroParticipantes: number; //
+  @IsNotEmpty()
+  numeroParticipantes: number;
 
   @IsArray()
   @IsEmail({}, { each: true })
-  participantes: string[]; //
+  @IsNotEmpty()
+  participantes: string[];
 
   @IsString()
   @IsNotEmpty()
-  finalidade: string; //
+  finalidade: string;
 
   @IsString()
   @IsNotEmpty()
-  descricao: string; //
+  descricao: string;
 
-  // --- Equipamentos ---
+  @IsString()
+  @IsOptional()
+  observacao?: string; // Campo Novo
+
+  // ... Campos de equipamentos permanecem iguais
   @IsString()
   @IsNotEmpty()
-  projetor: string; //
+  projetor: string;
 
   @IsString()
   @IsOptional()
-  somProjetor?: string; //
+  somProjetor?: string;
 
   @IsString()
   @IsNotEmpty()
-  internet: string; //
+  internet: string;
 
   @IsString()
   @IsOptional()
-  wifiTodos?: string; //
+  wifiTodos?: string;
 
   @IsString()
   @IsOptional()
-  conexaoCabo?: string; //
-
-  // --- Específicos Escola --- [cite: 104-108]
-  @IsString()
-  @IsOptional()
-  softwareEspecifico?: string; //
+  conexaoCabo?: string;
 
   @IsString()
   @IsOptional()
-  qualSoftware?: string; //
+  softwareEspecifico?: string;
 
   @IsString()
   @IsOptional()
-  papelaria?: string; //
+  qualSoftware?: string;
 
   @IsString()
   @IsOptional()
-  materialExterno?: string; //
+  papelaria?: string;
+
+  @IsString()
+  @IsOptional()
+  materialExterno?: string;
 
   @IsString()
   @IsOptional()

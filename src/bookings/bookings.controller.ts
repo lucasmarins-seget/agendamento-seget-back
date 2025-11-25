@@ -44,8 +44,4 @@ export class BookingsController {
   findPublicOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.bookingsService.findPublicOne(id);
   }
-
-  // TODO: Adicionar as outras rotas públicas
-  // POST /api/bookings/search [cite: 139]
-  // GET /api/bookings/:id [cite: 164]
 }

@@ -23,7 +23,7 @@ export class Booking {
   tipo_reserva: string;
 
   @Column({ type: 'varchar', length: 50, default: 'pending' })
-  status: string;
+  status: string; // 'pending', 'approved', 'rejected', 'em_analise'
 
   // --- Solicitante ---
   @Column({ type: 'varchar', length: 255 })
@@ -41,84 +41,88 @@ export class Booking {
   @Column({ type: 'varchar', length: 255 })
   email: string;
 
-  // --- Data e Horário ---
-  @Column({ type: 'date' })
-  data: string;
+  @Column({ type: 'simple-array' })
+  dates: string[];
 
-  @Column({ type: 'varchar', length: 10 }) // (HH:mm)
-  hora_inicio: string; // [cite: 495]
+  @Column({ type: 'varchar', length: 10 })
+  hora_inicio: string;
 
-  @Column({ type: 'varchar', length: 10 }) // (HH:mm)
-  hora_fim: string; // [cite: 495]
+  @Column({ type: 'varchar', length: 10 })
+  hora_fim: string;
 
-  // --- Evento --- [cite: 496]
+  // --- Evento ---
   @Column({ type: 'int' })
-  numero_participantes: number; // [cite: 499]
+  numero_participantes: number;
 
   @Column({ type: 'simple-array' })
-  participantes: string[]; // [cite: 499]
+  participantes: string[];
 
-  @Column({ type: 'varchar', length: 255 }) // ALTERADO
-  finalidade: string; // [cite: 500]
+  @Column({ type: 'varchar', length: 255 })
+  finalidade: string;
 
-  @Column({ type: 'text' }) // MANTIDO
-  descricao: string; // [cite: 501]
+  @Column({ type: 'text' })
+  descricao: string;
 
-  // --- Equipamentos --- [cite: 502]
-  @Column({ type: 'varchar', length: 10 }) // ALTERADO (Sim/Não)
-  projetor: string; // [cite: 503]
+  @Column({ type: 'text', nullable: true })
+  observacao: string | null;
 
-  @Column({ type: 'varchar', length: 10, nullable: true }) // ALTERADO (Sim/Não)
-  som_projetor: string; // [cite: 504]
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  local: string | null;
 
-  @Column({ type: 'varchar', length: 10 }) // ALTERADO (Sim/Não)
-  internet: string; // [cite: 505]
+  // --- Equipamentos ---
+  @Column({ type: 'varchar', length: 10 })
+  projetor: string;
 
-  @Column({ type: 'varchar', length: 10, nullable: true }) // ALTERADO (Sim/Não)
-  wifi_todos: string; // [cite: 506]
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  som_projetor: string;
 
-  @Column({ type: 'varchar', length: 10, nullable: true }) // ALTERADO (Sim/Não)
-  conexao_cabo: string; // [cite: 507]
+  @Column({ type: 'varchar', length: 10 })
+  internet: string;
 
-  // --- Específicos Escola --- [cite: 508]
-  @Column({ type: 'varchar', length: 10, nullable: true }) // ALTERADO (Sim/Não)
-  software_especifico: string; // [cite: 509]
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  wifi_todos: string;
 
-  @Column({ type: 'text', nullable: true }) // MANTIDO
-  qual_software: string; // [cite: 510]
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  conexao_cabo: string;
 
-  @Column({ type: 'text', nullable: true }) // MANTIDO
-  papelaria: string; // [cite: 511]
+  // --- Específicos Escola ---
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  software_especifico: string;
 
-  @Column({ type: 'text', nullable: true }) // MANTIDO
-  material_externo: string; // [cite: 512]
+  @Column({ type: 'text', nullable: true })
+  qual_software: string;
 
-  @Column({ type: 'varchar', length: 10, nullable: true }) // ALTERADO (Sim/Não)
-  apoio_equipe: string; // [cite: 513]
+  @Column({ type: 'text', nullable: true })
+  papelaria: string;
 
-  // --- Metadata --- [cite: 514]
+  @Column({ type: 'text', nullable: true })
+  material_externo: string;
+
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  apoio_equipe: string;
+
+  // --- Metadata ---
   @CreateDateColumn()
-  created_at: Date; // [cite: 515]
+  created_at: Date;
 
   @UpdateDateColumn()
-  updated_at: Date; // [cite: 516]
+  updated_at: Date;
 
-  @Column({ type: 'varchar', length: 255, nullable: true }) // ALTERADO (Email do Admin)
-  approved_by: string | null; // [cite: 517]
-
-  @Column({ type: 'timestamp', nullable: true })
-  approved_at: Date | null; // [cite: 519]
-
-  @Column({ type: 'varchar', length: 255, nullable: true }) // ALTERADO (Email do Admin)
-  rejected_by: string | null; // [cite: 520]
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  approved_by: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
-  rejected_at: Date | null; // [cite: 521]
+  approved_at: Date | null;
 
-  @Column({ type: 'text', nullable: true }) // MANTIDO
-  rejection_reason: string | null; // [cite: 522]
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  rejected_by: string | null;
 
-  // --- Relacionamento ---
+  @Column({ type: 'timestamp', nullable: true })
+  rejected_at: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  rejection_reason: string | null;
+
   @OneToMany(() => AttendanceRecord, (record) => record.booking)
   attendance_records: AttendanceRecord[];
 }
