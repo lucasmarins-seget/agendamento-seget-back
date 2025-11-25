@@ -51,10 +51,14 @@ export class MailService {
   }
 
   async sendUpdateEmail(booking: Booking) {
+    const formattedDates = booking.dates
+      .map((date) => new Date(`${date}T12:00:00Z`).toLocaleDateString('pt-BR'))
+      .join(', ');
+
     await this.mailerService.sendMail({
       to: booking.email,
       subject: 'Seu agendamento foi atualizado',
-      html: `Olá ${booking.nome_completo},<br><br>Seu agendamento para a sala ${booking.room_name} no dia ${new Date(`${booking.data}T12:00:00Z`).toLocaleDateString('pt-BR')} foi modificado. Por favor, verifique os novos detalhes.`,
+      html: `Olá ${booking.nome_completo},<br><br>Seu agendamento para a sala ${booking.room_name} nas datas ${formattedDates} foi modificado. Por favor, verifique os novos detalhes.`,
     });
   }
 
@@ -63,6 +67,26 @@ export class MailService {
       to: record.email,
       subject: `Presença Confirmada: ${booking.finalidade}`,
       html: `Olá ${record.full_name},<br><br>Sua presença como <b>${record.status}</b> foi registrada com sucesso para o evento ${booking.finalidade}.`,
+    });
+  }
+  
+  // E-mail: Status mudou para "Em Análise"
+  async sendUnderAnalysisEmail(booking: Booking, observacao: string) {
+    // Formata a data (ou datas) para o e-mail
+    const dateStr = Array.isArray(booking.dates) ? booking.dates.join(', ') : booking.dates;
+
+    await this.mailerService.sendMail({
+      to: booking.email,
+      subject: 'Atualização de Status: Em Análise',
+      html: `
+        <h3>Olá ${booking.nome_completo},</h3>
+        <p>O status da sua solicitação para a <b>${booking.room_name}</b> (Data(s): ${dateStr}) foi alterado para <b>Em Análise</b>.</p>
+        <p><b>Observação da Administração:</b></p>
+        <blockquote style="background: #f9f9f9; border-left: 10px solid #ccc; margin: 1.5em 10px; padding: 0.5em 10px;">
+          ${observacao}
+        </blockquote>
+        <p>Você será notificado assim que houver uma nova atualização.</p>
+      `,
     });
   }
 }

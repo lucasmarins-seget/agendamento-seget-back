@@ -9,6 +9,7 @@ import {
   MaxLength,
   Matches,
   ArrayMinSize,
+  IsDateString,
 } from 'class-validator';
 
 export class CreateBookingDto {

@@ -234,18 +234,17 @@ export class BookingsService {
 
   // --- SEARCH (Listagem Pública) ---
   async search(searchBookingDto: SearchBookingDto) {
-    const { room, date, name, status, sector } = searchBookingDto;
+    const { room, dates, name, status, sector } = searchBookingDto;
 
     const where: FindOptionsWhere<Booking> = {};
-    
+
     if (name) where.nome_completo = Like(`%${name}%`);
     if (status) where.status = status;
     if (sector) where.setor_solicitante = Like(`%${sector}%`);
     if (room) where.room = room;
-    if (date) where.dates = Like(`%${date}%`);
-
-    // Regra padrão para público: se não filtrar status, mostra approved e em_analise (para escola)
-    // ou conforme regra de negócio desejada. Aqui deixaremos aberto se não vier filtro.
+    if (dates && dates.length > 0) {
+      where.dates = In(dates);
+    }
 
     const results = await this.bookingRepository.find({
       where,
@@ -268,11 +267,12 @@ export class BookingsService {
         id: b.id,
         room: b.room_name,
         dates: b.dates,
-        // Helper para exibir no front (ex: "20/11, 21/11...")
-        dateStr: b.dates.map(d => {
+        dateStr: b.dates
+          .map((d) => {
             const [y, m, day] = d.split('-');
             return `${day}/${m}/${y}`;
-        }).join(', '),
+          })
+          .join(', '),
         name: b.nome_completo,
         sector: b.setor_solicitante,
         time: `${b.hora_inicio} às ${b.hora_fim}`,
