@@ -9,6 +9,10 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
+      transform: true,  // Habilita transformação automática
+      transformOptions: {
+        enableImplicitConversion: true,  // Converte tipos automaticamente
+      },
     }),
   );
   app.setGlobalPrefix('api');

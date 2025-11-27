@@ -15,6 +15,7 @@ import { UpdateBookingDto } from './dto/update-booking.dto';
 import { CreateAdminDto } from '../auth/dto/create-admin.dto';
 import { UpdateAdminDto } from './dto/update-admin.dto';
 import { AnalyzeBookingDto } from './dto/analyze-booking.dto';
+import { ApprovePartialBookingDto } from './dto/approve-partial-booking.dto';
 import * as bcrypt from 'bcrypt';
 import { MailService } from 'src/mail/mail.service';
 import PDFDocument from 'pdfkit';
@@ -128,53 +129,44 @@ export class AdminService {
     }
     this.checkPermission(booking, user);
 
+    // Retorna os dados no mesmo padrão flat snake_case como os bookings normais
     return {
       id: booking.id,
       room: booking.room,
-      roomName: booking.room_name,
-      tipoReserva: booking.tipo_reserva,
+      room_name: booking.room_name,
+      tipo_reserva: booking.tipo_reserva,
       status: booking.status,
-      solicitante: {
-        nomeCompleto: booking.nome_completo,
-        setorSolicitante: booking.setor_solicitante,
-        responsavel: booking.responsavel,
-        telefone: booking.telefone,
-        email: booking.email,
-      },
-      agendamento: {
-        dates: booking.dates, // Retorna o array
-        horaInicio: booking.hora_inicio,
-        horaFim: booking.hora_fim,
-        numeroParticipantes: booking.numero_participantes,
-        participantes: booking.participantes,
-        finalidade: booking.finalidade,
-        descricao: booking.descricao,
-        observacao: booking.observacao, // Novo campo
-        local: booking.local, // Novo campo
-      },
-      equipamentos: {
-        projetor: booking.projetor,
-        somProjetor: booking.som_projetor,
-        internet: booking.internet,
-        wifiTodos: booking.wifi_todos,
-        conexao_cabo: booking.conexao_cabo,
-      },
-      especificos: {
-        softwareEspecifico: booking.software_especifico,
-        qualSoftware: booking.qual_software,
-        papelaria: booking.papelaria,
-        materialExterno: booking.material_externo,
-        apoioEquipe: booking.apoio_equipe,
-      },
-      metadata: {
-        createdAt: booking.created_at,
-        updatedAt: booking.updated_at,
-        approvedBy: booking.approved_by,
-        approvedAt: booking.approved_at,
-        rejectedBy: booking.rejected_by,
-        rejectedAt: booking.rejected_at,
-        rejectionReason: booking.rejection_reason,
-      },
+      nome_completo: booking.nome_completo,
+      setor_solicitante: booking.setor_solicitante,
+      responsavel: booking.responsavel,
+      telefone: booking.telefone,
+      email: booking.email,
+      dates: booking.dates,
+      hora_inicio: booking.hora_inicio,
+      hora_fim: booking.hora_fim,
+      numero_participantes: booking.numero_participantes,
+      participantes: booking.participantes,
+      finalidade: booking.finalidade,
+      descricao: booking.descricao,
+      observacao: booking.observacao,
+      local: booking.local,
+      projetor: booking.projetor,
+      som_projetor: booking.som_projetor,
+      internet: booking.internet,
+      wifi_todos: booking.wifi_todos,
+      conexao_cabo: booking.conexao_cabo,
+      software_especifico: booking.software_especifico,
+      qual_software: booking.qual_software,
+      papelaria: booking.papelaria,
+      material_externo: booking.material_externo,
+      apoio_equipe: booking.apoio_equipe,
+      created_at: booking.created_at,
+      updated_at: booking.updated_at,
+      approved_by: booking.approved_by,
+      approved_at: booking.approved_at,
+      rejected_by: booking.rejected_by,
+      rejected_at: booking.rejected_at,
+      rejection_reason: booking.rejection_reason,
     };
   }
 
@@ -258,6 +250,102 @@ export class AdminService {
     };
   }
 
+  // PATCH /api/admin/bookings/:id/approve-partial
+  async approvePartial(
+    id: string,
+    approvePartialDto: ApprovePartialBookingDto,
+    user: AdminUserPayload,
+  ) {
+    const booking = await this.bookingRepository.findOneBy({ id });
+    if (!booking) {
+      throw new NotFoundException('Agendamento não encontrado');
+    }
+    this.checkPermission(booking, user);
+
+    const { datesToApprove, rejectionReason } = approvePartialDto;
+    const originalDates = booking.dates || [];
+
+    // 1. Validação: datesToApprove deve ser subconjunto estrito
+    const isSubset = datesToApprove.every((date) =>
+      originalDates.includes(date),
+    );
+    if (!isSubset) {
+      throw new ConflictException(
+        'As datas para aprovação devem fazer parte do agendamento original.',
+      );
+    }
+
+    const rejectedDates = originalDates.filter(
+      (date) => !datesToApprove.includes(date),
+    );
+
+    // Se não sobrar datas rejeitadas, é uma aprovação total padrão
+    if (rejectedDates.length === 0) {
+      return this.approve(id, user);
+    }
+
+    // Se tentar aprovar vazio, é rejeição total
+    if (datesToApprove.length === 0) {
+      return this.reject(id, { reason: rejectionReason }, user);
+    }
+
+    // 2. Atualizar a Entidade Original (Aprovada)
+    booking.dates = datesToApprove;
+    booking.status = 'approved';
+    booking.approved_by = user.email;
+    booking.approved_at = new Date();
+    
+    // Limpa rejeição se houver
+    booking.rejected_by = null;
+    booking.rejected_at = null;
+    booking.rejection_reason = null;
+
+    const savedApprovedBooking = await this.bookingRepository.save(booking);
+
+    // 3. Criar Entidade Clone (Rejeitada)
+    // Clona o objeto excluindo o ID para gerar um novo
+    const rejectedBooking = this.bookingRepository.create({
+      ...booking,
+      id: undefined, // Força geração de novo ID
+      dates: rejectedDates,
+      status: 'rejected',
+      approved_by: null,
+      approved_at: null,
+      rejected_by: user.email,
+      rejected_at: new Date(),
+      rejection_reason: rejectionReason || 'Datas indisponíveis na solicitação parcial.',
+      created_at: new Date(), // Novo timestamp
+      updated_at: new Date(),
+    });
+
+    const savedRejectedBooking = await this.bookingRepository.save(rejectedBooking);
+
+    // 4. Disparar E-mails
+    // Aprovado:
+    await this.mailService.sendApprovalEmail(savedApprovedBooking);
+    for (const email of savedApprovedBooking.participantes) {
+      await this.mailService.sendAttendanceLink(savedApprovedBooking, email);
+    }
+
+    // Rejeitado:
+    await this.mailService.sendRejectionEmail(savedRejectedBooking);
+
+    return {
+      success: true,
+      message: 'Agendamento aprovado parcialmente com sucesso.',
+      originalBooking: {
+        id: savedApprovedBooking.id,
+        dates: savedApprovedBooking.dates,
+        status: savedApprovedBooking.status,
+      },
+      rejectedBooking: {
+        id: savedRejectedBooking.id,
+        dates: savedRejectedBooking.dates,
+        status: savedRejectedBooking.status,
+      },
+    };
+  }
+
   // PATCH /api/admin/bookings/:id/reject
   async reject(
     id: string,
@@ -308,11 +396,38 @@ export class AdminService {
     }
     this.checkPermission(booking, user);
 
-    // Mescla os dados novos na entidade existente
-    Object.assign(booking, updateBookingDto);
-
-    // Se houver lógica especial para datas, adicionar aqui.
-    // Como 'dates' é array de strings, o assign funciona bem.
+    // Mapeamento explícito de DTO (camelCase) para Entity (snake_case)
+    // Isso é necessário porque o Object.assign direto não lida com a diferença de nomes
+    if (updateBookingDto.roomName) booking.room_name = updateBookingDto.roomName;
+    if (updateBookingDto.tipoReserva) booking.tipo_reserva = updateBookingDto.tipoReserva;
+    if (updateBookingDto.nomeCompleto) booking.nome_completo = updateBookingDto.nomeCompleto;
+    if (updateBookingDto.setorSolicitante) booking.setor_solicitante = updateBookingDto.setorSolicitante;
+    if (updateBookingDto.horaInicio) booking.hora_inicio = updateBookingDto.horaInicio;
+    if (updateBookingDto.horaFim) booking.hora_fim = updateBookingDto.horaFim;
+    if (updateBookingDto.numeroParticipantes) booking.numero_participantes = updateBookingDto.numeroParticipantes;
+    
+    // Campos que já coincidem ou são simples
+    if (updateBookingDto.room) booking.room = updateBookingDto.room;
+    if (updateBookingDto.dates) booking.dates = updateBookingDto.dates;
+    if (updateBookingDto.responsavel) booking.responsavel = updateBookingDto.responsavel;
+    if (updateBookingDto.telefone) booking.telefone = updateBookingDto.telefone;
+    if (updateBookingDto.email) booking.email = updateBookingDto.email;
+    if (updateBookingDto.participantes) booking.participantes = updateBookingDto.participantes;
+    if (updateBookingDto.finalidade) booking.finalidade = updateBookingDto.finalidade;
+    if (updateBookingDto.descricao) booking.descricao = updateBookingDto.descricao;
+    if (updateBookingDto.observacao !== undefined) booking.observacao = updateBookingDto.observacao;
+    
+    // Equipamentos e Específicos (mapeamento)
+    if (updateBookingDto.projetor) booking.projetor = updateBookingDto.projetor;
+    if (updateBookingDto.somProjetor) booking.som_projetor = updateBookingDto.somProjetor;
+    if (updateBookingDto.internet) booking.internet = updateBookingDto.internet;
+    if (updateBookingDto.wifiTodos) booking.wifi_todos = updateBookingDto.wifiTodos;
+    if (updateBookingDto.conexaoCabo) booking.conexao_cabo = updateBookingDto.conexaoCabo;
+    if (updateBookingDto.softwareEspecifico) booking.software_especifico = updateBookingDto.softwareEspecifico;
+    if (updateBookingDto.qualSoftware) booking.qual_software = updateBookingDto.qualSoftware;
+    if (updateBookingDto.papelaria) booking.papelaria = updateBookingDto.papelaria;
+    if (updateBookingDto.materialExterno) booking.material_externo = updateBookingDto.materialExterno;
+    if (updateBookingDto.apoioEquipe) booking.apoio_equipe = updateBookingDto.apoioEquipe;
 
     const updatedBooking = await this.bookingRepository.save(booking);
 

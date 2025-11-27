@@ -11,6 +11,7 @@ import {
   ArrayMinSize,
   IsDateString,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateBookingDto {
   @IsString()
@@ -19,19 +20,23 @@ export class CreateBookingDto {
 
   @IsString()
   @IsNotEmpty()
+  @Transform(({ value }) => value, { toClassOnly: true })
   roomName: string;
 
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value, { toClassOnly: true })
   tipoReserva?: string;
 
   @IsString()
   @IsNotEmpty()
   @Matches(/^[a-zA-Z\s]*$/, { message: 'Nome não pode conter números' })
+  @Transform(({ value }) => value, { toClassOnly: true })
   nomeCompleto: string;
 
   @IsString()
   @IsNotEmpty()
+  @Transform(({ value }) => value, { toClassOnly: true })
   setorSolicitante: string;
 
   @IsString()
@@ -55,14 +60,17 @@ export class CreateBookingDto {
 
   @IsString()
   @IsNotEmpty()
+  @Transform(({ value }) => value, { toClassOnly: true })
   horaInicio: string;
 
   @IsString()
   @IsNotEmpty()
+  @Transform(({ value }) => value, { toClassOnly: true })
   horaFim: string;
 
   @IsNumber()
   @IsNotEmpty()
+  @Transform(({ value }) => typeof value === 'string' ? parseInt(value, 10) : value)
   numeroParticipantes: number;
 
   @IsArray()
@@ -89,6 +97,7 @@ export class CreateBookingDto {
 
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value, { toClassOnly: true })
   somProjetor?: string;
 
   @IsString()
@@ -97,18 +106,22 @@ export class CreateBookingDto {
 
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value, { toClassOnly: true })
   wifiTodos?: string;
 
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value, { toClassOnly: true })
   conexaoCabo?: string;
 
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value, { toClassOnly: true })
   softwareEspecifico?: string;
 
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value, { toClassOnly: true })
   qualSoftware?: string;
 
   @IsString()
@@ -117,9 +130,11 @@ export class CreateBookingDto {
 
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value, { toClassOnly: true })
   materialExterno?: string;
 
   @IsString()
   @IsOptional()
+  @Transform(({ value }) => value, { toClassOnly: true })
   apoioEquipe?: string;
 }

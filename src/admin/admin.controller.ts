@@ -24,6 +24,7 @@ import { SuperAdminGuard } from 'src/auth/guards/super-admin.guard';
 import { CreateAdminDto } from 'src/auth/dto/create-admin.dto';
 import { UpdateAdminDto } from './dto/update-admin.dto';
 import { AnalyzeBookingDto } from './dto/analyze-booking.dto';
+import { ApprovePartialBookingDto } from './dto/approve-partial-booking.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('admin')
@@ -140,5 +141,14 @@ export class AdminController {
     @Request() req,
   ) {
     return this.adminService.analyze(id, analyzeBookingDto, req.user);
+  }
+
+  @Patch('bookings/:id/approve-partial')
+  approvePartial(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() approvePartialDto: ApprovePartialBookingDto,
+    @Request() req,
+  ) {
+    return this.adminService.approvePartial(id, approvePartialDto, req.user);
   }
 }
