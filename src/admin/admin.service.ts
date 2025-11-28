@@ -69,56 +69,56 @@ export class AdminService {
   // GET /api/admin/bookings
   async findAll(pagination: any, filters: any, user: AdminUserPayload) {
     const { page, limit } = pagination;
-    const where: FindOptionsWhere<Booking> = {};
+    const statuses = ['pending', 'approved', 'rejected', 'em_analise'];
 
-    // 1. Filtro de Permissão
-    if (!user.isSuperAdmin) {
-      where.room = user.roomAccess;
-    } else if (filters.room) {
-      where.room = filters.room;
+    const resultsByStatus = {};
+
+    for (const status of statuses) {
+      const where: FindOptionsWhere<Booking> = { status };
+
+      // Filtro de permissão
+      if (!user.isSuperAdmin) {
+        where.room = user.roomAccess;
+      } else if (filters.room) {
+        where.room = filters.room;
+      }
+
+      // Outros filtros
+      if (filters.name) where.nome_completo = Like(`%${filters.name}%`);
+      if (filters.date) where.dates = Like(`%${filters.date}%`);
+
+      const [results, total] = await this.bookingRepository.findAndCount({
+        where,
+        order: { created_at: 'DESC' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: [
+          'id',
+          'room',
+          'room_name',
+          'dates',
+          'hora_inicio',
+          'hora_fim',
+          'nome_completo',
+          'setor_solicitante',
+          'finalidade',
+          'status',
+          'created_at',
+        ],
+      });
+
+      resultsByStatus[status] = {
+        bookings: results,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
     }
 
-    // 2. Filtros da Query
-    if (filters.status) where.status = filters.status;
-    
-    // Como 'data' agora é string no banco (simple-array ou string simples dependendo da versão),
-    // e o filtro vem como string 'YYYY-MM-DD', a comparação direta funciona se for campo simples.
-    // SE for array de datas (nova versão), precisaríamos usar Like.
-    // Assumindo compatibilidade com a versão anterior ou busca exata por enquanto.
-    // Se mudamos para array, o ideal seria: 
-    if (filters.date) where.dates = Like(`%${filters.date}%`);
-
-    if (filters.name) where.nome_completo = Like(`%${filters.name}%`);
-
-    const [results, total] = await this.bookingRepository.findAndCount({
-      where,
-      order: { created_at: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-      select: [
-        'id',
-        'room',
-        'room_name',
-        'dates', // Importante: trazer o array de datas
-        'hora_inicio',
-        'hora_fim',
-        'nome_completo',
-        'setor_solicitante',
-        'finalidade',
-        'status',
-        'created_at',
-      ],
-    });
-
-    return {
-      bookings: results,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return resultsByStatus;
   }
 
   // GET /api/admin/bookings/:id/details
