@@ -18,7 +18,7 @@ export class AttendanceService {
     @InjectRepository(Employee)
     private readonly employeeRepository: Repository<Employee>,
     private readonly mailService: MailService,
-  ) {}
+  ) { }
 
   async verifyEmail(verifyEmailDto: VerifyEmailDto) {
     const { email, bookingId } = verifyEmailDto;
@@ -57,7 +57,7 @@ export class AttendanceService {
     return {
       exists: false,
       userData: {
-        name: '', 
+        name: '',
         isEmployee: false,
       },
     };
