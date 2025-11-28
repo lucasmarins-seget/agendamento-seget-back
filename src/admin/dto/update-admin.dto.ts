@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsBoolean, IsOptional, MinLength } from 'class-validator';
+import { IsEmail, IsString, IsBoolean, IsOptional, MinLength, ValidateIf } from 'class-validator';
 
 export class UpdateAdminDto {
   @IsEmail()
@@ -14,6 +14,7 @@ export class UpdateAdminDto {
   @IsOptional()
   isSuperAdmin?: boolean;
 
+  @ValidateIf((o) => o.isSuperAdmin === false) // Valida apenas se explicitamente setado como false
   @IsString()
   @IsOptional()
   roomAccess?: string | null;

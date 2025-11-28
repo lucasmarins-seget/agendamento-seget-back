@@ -36,12 +36,13 @@ export class AttendanceService {
       );
     }
 
+    // Verifica se o email existe na tabela de employees
     const employee = await this.employeeRepository.findOneBy({
       email: verifyingEmail,
     });
 
     if (employee) {
-      // Se for colaborador, retorna o nome dele.
+      // Se for colaborador cadastrado, retorna o nome dele e isEmployee: true
       return {
         exists: true,
         userData: {
@@ -51,23 +52,10 @@ export class AttendanceService {
       };
     }
 
-    // CASO 2: É o Solicitante?
-    const solicitanteEmail = booking.email.toLowerCase();
-    const isSolicitante = verifyingEmail === solicitanteEmail;
-
-    if (isSolicitante) {
-      return {
-        exists: true,
-        userData: {
-          name: booking.nome_completo,
-          isEmployee: false,
-        },
-      };
-    }
-
-    // CASO 3: É um Convidado (não é colaborador, não é solicitante)
+    // Se o email não estiver na tabela de employees, é um visitante
+    // Retorna exists: false para indicar que é necessário pedir nome completo
     return {
-      exists: true,
+      exists: false,
       userData: {
         name: '', 
         isEmployee: false,

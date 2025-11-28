@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsString, IsBoolean, IsOptional, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, IsBoolean, IsOptional, MinLength, ValidateIf } from 'class-validator';
 
 export class CreateAdminDto {
   @IsEmail()
@@ -13,7 +13,8 @@ export class CreateAdminDto {
   @IsBoolean()
   isSuperAdmin: boolean;
 
+  @ValidateIf((o) => !o.isSuperAdmin) // Valida apenas se NÃO é superadmin
   @IsString()
-  @IsOptional() // O acesso à sala é opcional
-  roomAccess?: string | null;
+  @IsNotEmpty({ message: 'Usuários que não são Super Admin devem ter acesso a uma sala' })
+  roomAccess?: string | null; // Obrigatório se não é superadmin, pode ser null se for superadmin
 }

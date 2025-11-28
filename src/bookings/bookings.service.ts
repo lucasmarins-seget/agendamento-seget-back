@@ -33,7 +33,7 @@ export class BookingsService {
     @InjectRepository(AdminUser)
     private readonly adminUserRepository: Repository<AdminUser>,
     private readonly mailService: MailService,
-  ) {}
+  ) { }
 
   async create(createBookingDto: CreateBookingDto) {
     const {
@@ -47,7 +47,7 @@ export class BookingsService {
     } = createBookingDto;
 
     // --- 1. VALIDAÇÃO DE HORÁRIO E DURAÇÃO ---
-    
+
     // Converter para minutos para facilitar comparação
     const [hIni, mIni] = horaInicio.split(':').map(Number);
     const [hFim, mFim] = horaFim.split(':').map(Number);
@@ -109,18 +109,18 @@ export class BookingsService {
     for (const dateStr of dates) {
       // Verifica se a data está na lista de bloqueios
       const blockOnDate = blocks.find((b) => b.dates.includes(dateStr));
-      
+
       if (blockOnDate) {
         // Se houver bloqueio na data, verifica colisão de horário
         // Se o horário do bloqueio colidir com o do agendamento
         const isTimeBlocked = blockOnDate.times.some(blockedTime => {
-           // Lógica simplificada: se o horário bloqueado estiver DENTRO do intervalo do agendamento
-           // ou se o agendamento tentar pegar o horário exato
-           return blockedTime >= horaInicio && blockedTime < horaFim;
+          // Lógica simplificada: se o horário bloqueado estiver DENTRO do intervalo do agendamento
+          // ou se o agendamento tentar pegar o horário exato
+          return blockedTime >= horaInicio && blockedTime < horaFim;
         });
 
         if (isTimeBlocked) {
-           throw new BadRequestException(
+          throw new BadRequestException(
             `O horário no dia ${dateStr} está bloqueado pela administração (Motivo: ${blockOnDate.reason}).`,
           );
         }
@@ -128,7 +128,7 @@ export class BookingsService {
     }
 
     // --- 5. VALIDAÇÃO DE CONFLITOS DE AGENDAMENTO ---
-    
+
     // Caso A: Escola Fazendária - Computador
     if (room === 'escola_fazendaria' && tipoReserva === 'computador') {
       const setting = await this.roomSettingRepository.findOneBy({
@@ -142,7 +142,7 @@ export class BookingsService {
             room: 'escola_fazendaria',
             tipo_reserva: 'computador',
             status: In(['approved', 'pending', 'em_analise']),
-            dates: Like(`%${dateStr}%`), 
+            dates: Like(`%${dateStr}%`),
             hora_inicio: LessThan(horaFim),
             hora_fim: MoreThan(horaInicio),
           },
@@ -155,14 +155,13 @@ export class BookingsService {
 
         if (computersInUse + numeroParticipantes > availableComputers) {
           throw new BadRequestException(
-            `Não há computadores suficientes no dia ${dateStr}. Restam: ${
-              availableComputers - computersInUse
+            `Não há computadores suficientes no dia ${dateStr}. Restam: ${availableComputers - computersInUse
             }.`,
           );
         }
       }
     }
-    
+
     // Caso B: Salas Padrão (Delta e Receitório)
     // Bloqueio total se houver qualquer agendamento não recusado
     else if (room !== 'escola_fazendaria') {
@@ -194,6 +193,7 @@ export class BookingsService {
       status: initialStatus,
       observacao,
       // Mapeamento explícito para garantir consistência
+      room: createBookingDto.room,
       room_name: createBookingDto.roomName,
       tipo_reserva: createBookingDto.tipoReserva,
       nome_completo: createBookingDto.nomeCompleto,
@@ -217,7 +217,7 @@ export class BookingsService {
     const admins = await this.adminUserRepository.find({
       where: [{ room_access: savedBooking.room }, { is_super_admin: true }],
     });
-    
+
     const adminEmails = [...new Set(admins.map((a) => a.email))];
     for (const email of adminEmails) {
       await this.mailService.sendAdminNotification(savedBooking, email);
@@ -308,7 +308,7 @@ export class BookingsService {
     // Como há múltiplas salas independentes, tecnicamente NUNCA mostramos o horário como "bloqueado visualmente"
     // para agendamento de SALA, pois sempre cabe mais uma (até o limite físico real, que o sistema não controla automaticamente).
     if (room === 'escola_fazendaria') {
-        return { room, date, occupiedHours: [] };
+      return { room, date, occupiedHours: [] };
     }
 
     // Para Delta e Receitório:
@@ -330,17 +330,17 @@ export class BookingsService {
 
       // Adiciona todos os horários dentro do intervalo
       const hoursToCheck = [9, 10, 11, 12, 13, 14, 15, 16, 17];
-      
-      hoursToCheck.forEach(h => {
-         const hourInMinutes = h * 60;
-         const startInMinutes = startHour * 60 + startMin;
-         const endInMinutes = endHour * 60 + endMin;
 
-         // Se o horário 'h' cai dentro do intervalo reservado (inclusive início, exclusive fim)
-         // Ex: 13:00 as 14:00 -> Bloqueia 13:00.
-         if (hourInMinutes >= startInMinutes && hourInMinutes < endInMinutes) {
-             occupiedHours.add(`${h.toString().padStart(2, '0')}:00`);
-         }
+      hoursToCheck.forEach(h => {
+        const hourInMinutes = h * 60;
+        const startInMinutes = startHour * 60 + startMin;
+        const endInMinutes = endHour * 60 + endMin;
+
+        // Se o horário 'h' cai dentro do intervalo reservado (inclusive início, exclusive fim)
+        // Ex: 13:00 as 14:00 -> Bloqueia 13:00.
+        if (hourInMinutes >= startInMinutes && hourInMinutes < endInMinutes) {
+          occupiedHours.add(`${h.toString().padStart(2, '0')}:00`);
+        }
       });
     });
 

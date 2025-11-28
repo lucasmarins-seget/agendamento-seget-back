@@ -25,7 +25,7 @@ type AdminUserPayload = {
   id: string;
   email: string;
   isSuperAdmin: boolean;
-  roomAccess: string;
+  roomAccess: string | null;
 };
 
 // Tipo para o array de presença
@@ -49,7 +49,7 @@ export class AdminService {
     @InjectRepository(AdminUser)
     private readonly adminUserRepository: Repository<AdminUser>,
     private readonly mailService: MailService,
-  ) {}
+  ) { }
 
   // Checa se o admin tem permissão para acessar um agendamento
   private checkPermission(booking: Booking, user: AdminUserPayload) {
@@ -76,16 +76,24 @@ export class AdminService {
     for (const status of statuses) {
       const where: FindOptionsWhere<Booking> = { status };
 
-      // Filtro de permissão
+      // 1. Filtro de Permissão
       if (!user.isSuperAdmin) {
         where.room = user.roomAccess;
       } else if (filters.room) {
         where.room = filters.room;
       }
 
-      // Outros filtros
-      if (filters.name) where.nome_completo = Like(`%${filters.name}%`);
+      // 2. Filtros da Query
+      if (filters.status) where.status = filters.status;
+
+      // Como 'data' agora é string no banco (simple-array ou string simples dependendo da versão),
+      // e o filtro vem como string 'YYYY-MM-DD', a comparação direta funciona se for campo simples.
+      // SE for array de datas (nova versão), precisaríamos usar Like.
+      // Assumindo compatibilidade com a versão anterior ou busca exata por enquanto.
+      // Se mudamos para array, o ideal seria: 
       if (filters.date) where.dates = Like(`%${filters.date}%`);
+
+      if (filters.name) where.nome_completo = Like(`%${filters.name}%`);
 
       const [results, total] = await this.bookingRepository.findAndCount({
         where,
@@ -181,7 +189,7 @@ export class AdminService {
     booking.status = 'approved';
     booking.approved_by = user.email;
     booking.approved_at = new Date();
-    
+
     // Limpa dados de rejeição se houver
     booking.rejected_by = null;
     booking.rejected_at = null;
@@ -294,7 +302,7 @@ export class AdminService {
     booking.status = 'approved';
     booking.approved_by = user.email;
     booking.approved_at = new Date();
-    
+
     // Limpa rejeição se houver
     booking.rejected_by = null;
     booking.rejected_at = null;
@@ -362,7 +370,7 @@ export class AdminService {
     booking.rejected_by = user.email;
     booking.rejected_at = new Date();
     booking.rejection_reason = rejectBookingDto.reason ?? null;
-    
+
     // Limpa aprovação se houver
     booking.approved_by = null;
     booking.approved_at = null;
@@ -405,7 +413,7 @@ export class AdminService {
     if (updateBookingDto.horaInicio) booking.hora_inicio = updateBookingDto.horaInicio;
     if (updateBookingDto.horaFim) booking.hora_fim = updateBookingDto.horaFim;
     if (updateBookingDto.numeroParticipantes) booking.numero_participantes = updateBookingDto.numeroParticipantes;
-    
+
     // Campos que já coincidem ou são simples
     if (updateBookingDto.room) booking.room = updateBookingDto.room;
     if (updateBookingDto.dates) booking.dates = updateBookingDto.dates;
@@ -416,7 +424,7 @@ export class AdminService {
     if (updateBookingDto.finalidade) booking.finalidade = updateBookingDto.finalidade;
     if (updateBookingDto.descricao) booking.descricao = updateBookingDto.descricao;
     if (updateBookingDto.observacao !== undefined) booking.observacao = updateBookingDto.observacao;
-    
+
     // Equipamentos e Específicos (mapeamento)
     if (updateBookingDto.projetor) booking.projetor = updateBookingDto.projetor;
     if (updateBookingDto.somProjetor) booking.som_projetor = updateBookingDto.somProjetor;
