@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Param,
   Get,
+  Query,
 } from '@nestjs/common';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
@@ -15,7 +16,7 @@ import { SearchBookingDto } from './dto/search-booking.dto';
 // Rota base: /api/bookings
 @Controller('bookings')
 export class BookingsController {
-  constructor(private readonly bookingsService: BookingsService) {}
+  constructor(private readonly bookingsService: BookingsService) { }
 
   // Rota: POST /api/bookings/create
   @Post('create')
@@ -31,13 +32,14 @@ export class BookingsController {
     return this.bookingsService.search(searchBookingDto);
   }
 
-  // GET /api/bookings/available-hours/:room/:date - Retorna horários ocupados
-  @Get('available-hours/:room/:date')
+  // GET /api/bookings/available-hours/:room_name/:date?tipoReserva=sala|computador - Retorna horários ocupados
+  @Get('available-hours/:room_name/:date')
   getOccupiedHours(
-    @Param('room') room: string,
+    @Param('room_name') room_name: string,
     @Param('date') date: string,
+    @Query('tipoReserva') tipoReserva?: string,
   ) {
-    return this.bookingsService.getOccupiedHours(room, date);
+    return this.bookingsService.getOccupiedHours(room_name, date, tipoReserva);
   }
 
   @Get(':id')

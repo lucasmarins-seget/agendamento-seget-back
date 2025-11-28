@@ -4,5 +4,5 @@ export class AnalyzeBookingDto {
   @IsString()
   @IsOptional()
   @MaxLength(1000)
-  observacao?: string;
+  observacao_admin?: string;
 }

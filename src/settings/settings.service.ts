@@ -19,7 +19,7 @@ export class SettingsService {
     private readonly roomBlockRepository: Repository<RoomBlock>,
     @InjectRepository(RoomSetting)
     private readonly roomSettingRepository: Repository<RoomSetting>,
-  ) {}
+  ) { }
 
   async createBlock(createBlockDto: CreateBlockDto, user: any) {
     for (const dateStr of createBlockDto.dates) {
@@ -44,7 +44,6 @@ export class SettingsService {
     }
     const newBlock = this.roomBlockRepository.create({
       ...createBlockDto,
-      room_name: createBlockDto.room,
       created_by: user.email,
     });
     const savedBlock = await this.roomBlockRepository.save(newBlock);
@@ -56,8 +55,8 @@ export class SettingsService {
     };
   }
 
-  async findBlocks(room?: string) {
-    const where = room ? { room } : {};
+  async findBlocks(room_name?: string) {
+    const where = room_name ? { room_name } : {};
     const blocks = await this.roomBlockRepository.find({ where });
     return { blocks };
   }
@@ -75,7 +74,7 @@ export class SettingsService {
 
   async getComputers() {
     const setting = await this.roomSettingRepository.findOneBy({
-      room: ESCOLA_FAZENDARIA,
+      room_name: ESCOLA_FAZENDARIA,
     });
     return {
       availableComputers: setting?.available_computers || 0,
@@ -84,12 +83,12 @@ export class SettingsService {
 
   async updateComputers(updateComputersDto: UpdateComputersDto) {
     let setting = await this.roomSettingRepository.findOneBy({
-      room: ESCOLA_FAZENDARIA,
+      room_name: ESCOLA_FAZENDARIA,
     });
 
     if (!setting) {
       setting = this.roomSettingRepository.create({
-        room: ESCOLA_FAZENDARIA,
+        room_name: ESCOLA_FAZENDARIA,
       });
     }
 

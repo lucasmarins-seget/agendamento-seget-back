@@ -56,7 +56,7 @@ export class AdminService {
     if (user.isSuperAdmin) {
       return true;
     }
-    if (booking.room === user.roomAccess) {
+    if (booking.room_name === user.roomAccess) {
       return true;
     }
     throw new ForbiddenException(
@@ -78,9 +78,11 @@ export class AdminService {
 
       // 1. Filtro de Permissão
       if (!user.isSuperAdmin) {
-        where.room = user.roomAccess;
-      } else if (filters.room) {
-        where.room = filters.room;
+        if (user.roomAccess) {
+          where.room_name = user.roomAccess;
+        }
+      } else if (filters.room_name) {
+        where.room_name = filters.room_name;
       }
 
       // 2. Filtros da Query
@@ -102,7 +104,6 @@ export class AdminService {
         take: limit,
         select: [
           'id',
-          'room',
           'room_name',
           'dates',
           'hora_inicio',
@@ -140,7 +141,6 @@ export class AdminService {
     // Retorna os dados no mesmo padrão flat snake_case como os bookings normais
     return {
       id: booking.id,
-      room: booking.room,
       room_name: booking.room_name,
       tipo_reserva: booking.tipo_reserva,
       status: booking.status,
@@ -157,6 +157,7 @@ export class AdminService {
       finalidade: booking.finalidade,
       descricao: booking.descricao,
       observacao: booking.observacao,
+      observacao_admin: booking.observacao_admin,
       local: booking.local,
       projetor: booking.projetor,
       som_projetor: booking.som_projetor,
@@ -227,14 +228,14 @@ export class AdminService {
     }
     this.checkPermission(booking, user);
 
-    // Define a observação
-    const observacao =
-      analyzeBookingDto.observacao ||
+    // Define a observação do admin
+    const observacaoAdmin =
+      analyzeBookingDto.observacao_admin ||
       'Seu agendamento está sob análise da administração para verificação de detalhes.';
 
     booking.status = 'em_analise';
-    // Salva a observação no campo 'rejection_reason' para histórico do admin
-    booking.rejection_reason = observacao;
+    // Salva a observação do admin no campo específico
+    booking.observacao_admin = observacaoAdmin;
 
     // Limpa metadados de aprovação/rejeição anteriores
     booking.approved_by = null;
@@ -244,8 +245,8 @@ export class AdminService {
 
     const savedBooking = await this.bookingRepository.save(booking);
 
-    // Envia e-mail notificando a mudança
-    await this.mailService.sendUnderAnalysisEmail(savedBooking, observacao);
+    // Envia e-mail notificando a mudança com a observação do admin
+    await this.mailService.sendUnderAnalysisEmail(savedBooking, observacaoAdmin);
 
     return {
       success: true,
@@ -253,7 +254,7 @@ export class AdminService {
       booking: {
         id: savedBooking.id,
         status: savedBooking.status,
-        observacaoAdmin: observacao,
+        observacaoAdmin: observacaoAdmin,
       },
     };
   }
@@ -406,7 +407,7 @@ export class AdminService {
 
     // Mapeamento explícito de DTO (camelCase) para Entity (snake_case)
     // Isso é necessário porque o Object.assign direto não lida com a diferença de nomes
-    if (updateBookingDto.roomName) booking.room_name = updateBookingDto.roomName;
+    if (updateBookingDto.room_name) booking.room_name = updateBookingDto.room_name;
     if (updateBookingDto.tipoReserva) booking.tipo_reserva = updateBookingDto.tipoReserva;
     if (updateBookingDto.nomeCompleto) booking.nome_completo = updateBookingDto.nomeCompleto;
     if (updateBookingDto.setorSolicitante) booking.setor_solicitante = updateBookingDto.setorSolicitante;
@@ -415,7 +416,6 @@ export class AdminService {
     if (updateBookingDto.numeroParticipantes) booking.numero_participantes = updateBookingDto.numeroParticipantes;
 
     // Campos que já coincidem ou são simples
-    if (updateBookingDto.room) booking.room = updateBookingDto.room;
     if (updateBookingDto.dates) booking.dates = updateBookingDto.dates;
     if (updateBookingDto.responsavel) booking.responsavel = updateBookingDto.responsavel;
     if (updateBookingDto.telefone) booking.telefone = updateBookingDto.telefone;
@@ -512,8 +512,7 @@ export class AdminService {
     return {
       booking: {
         id: booking.id,
-        room: booking.room,
-        roomName: booking.room_name,
+        room_name: booking.room_name,
         dates: booking.dates,
         startTime: booking.hora_inicio,
         endTime: booking.hora_fim,
@@ -551,7 +550,7 @@ export class AdminService {
       .text(
         `Data(s): ${datesStr} | Horário: ${booking.startTime} - ${booking.endTime}`,
       );
-    doc.text(`Sala: ${booking.roomName}`);
+    doc.text(`Sala: ${booking.room_name}`);
     doc.text(`Responsável: ${booking.responsavel} (${booking.sector})`);
     doc.moveDown();
 

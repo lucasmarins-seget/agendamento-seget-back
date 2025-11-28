@@ -10,9 +10,6 @@ export class RoomBlock {
   @PrimaryGeneratedColumn('uuid')
   id: string; // [cite: 565]
 
-  @Column({ type: 'varchar', length: 50, nullable: false })
-  room: string; // [cite: 566]
-
   @Column({ type: 'varchar', length: 100, nullable: false })
   room_name: string; // [cite: 567]
 

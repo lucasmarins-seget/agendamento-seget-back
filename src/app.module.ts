@@ -29,6 +29,13 @@ import { EmployeesModule } from './employees/employees.module';
         database: configService.get<string>('DB_DATABASE'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         synchronize: true,
+        // Configurações de timeout e retry
+        connectTimeout: 60000, // 60 segundos
+        timeout: 60000,
+        extra: {
+          connectionLimit: 10,
+          connectTimeout: 60000,
+        },
       }),
     }),
     BookingsModule,
@@ -42,4 +49,4 @@ import { EmployeesModule } from './employees/employees.module';
   controllers: [AppController],
   providers: [AppService, MailService],
 })
-export class AppModule {}
+export class AppModule { }

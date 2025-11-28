@@ -3,7 +3,7 @@ import { IsArray, IsOptional, IsString, IsDateString } from 'class-validator';
 export class SearchBookingDto {
   @IsString()
   @IsOptional()
-  room?: string;
+  room_name?: string;
 
   @IsArray()
   @IsOptional()

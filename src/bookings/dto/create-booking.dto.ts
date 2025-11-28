@@ -16,12 +16,8 @@ import { Transform } from 'class-transformer';
 export class CreateBookingDto {
   @IsString()
   @IsNotEmpty()
-  room: string;
-
-  @IsString()
-  @IsNotEmpty()
   @Transform(({ value }) => value, { toClassOnly: true })
-  roomName: string;
+  room_name: string;
 
   @IsString()
   @IsOptional()

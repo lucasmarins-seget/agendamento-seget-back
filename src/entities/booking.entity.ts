@@ -13,9 +13,6 @@ export class Booking {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar', length: 50 })
-  room: string;
-
   @Column({ type: 'varchar', length: 100 })
   room_name: string;
 
@@ -65,6 +62,9 @@ export class Booking {
 
   @Column({ type: 'text', nullable: true })
   observacao: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  observacao_admin: string | null;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   local: string | null;

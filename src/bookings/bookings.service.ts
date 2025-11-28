@@ -40,7 +40,7 @@ export class BookingsService {
       dates,
       horaInicio,
       horaFim,
-      room,
+      room_name,
       tipoReserva,
       numeroParticipantes,
       observacao,
@@ -79,7 +79,7 @@ export class BookingsService {
     let initialStatus = 'pending';
 
     // --- 3. REGRAS ESPECÍFICAS: ESCOLA FAZENDÁRIA ---
-    if (room === 'escola_fazendaria') {
+    if (room_name === 'escola_fazendaria') {
       // Regra: Exatamente 3 datas
       if (dates.length !== 3) {
         throw new BadRequestException(
@@ -87,25 +87,29 @@ export class BookingsService {
         );
       }
 
-      // Regra: Horários Permitidos (09:00 as 17:00)
-      // Início máximo 16:00, Fim máximo 17:00, Início mínimo 09:00
-      if (horaInicio < '09:00' || horaInicio > '16:00') {
-        throw new BadRequestException(
-          'Horário de início inválido para Escola Fazendária (permitido entre 09:00 e 16:00).',
-        );
+      // Regra: Validação de Horários APENAS para reserva de SALA
+      if (tipoReserva === 'sala') {
+        // Horários Permitidos (09:00 as 17:00)
+        // Início máximo 16:00, Fim máximo 17:00, Início mínimo 09:00
+        if (horaInicio < '09:00' || horaInicio > '16:00') {
+          throw new BadRequestException(
+            'Horário de início inválido para Escola Fazendária (permitido entre 09:00 e 16:00).',
+          );
+        }
+        if (horaFim < '10:00' || horaFim > '17:00') {
+          throw new BadRequestException(
+            'Horário de fim inválido para Escola Fazendária (permitido entre 10:00 e 17:00).',
+          );
+        }
       }
-      if (horaFim < '10:00' || horaFim > '17:00') {
-        throw new BadRequestException(
-          'Horário de fim inválido para Escola Fazendária (permitido entre 10:00 e 17:00).',
-        );
-      }
+      // Para 'computador', não há restrição de horário
 
       // Regra: Status Inicial "Em Análise"
       initialStatus = 'pending';
     }
 
     // --- 4. VALIDAÇÃO DE BLOQUEIOS ADMINISTRATIVOS ---
-    const blocks = await this.roomBlockRepository.findBy({ room });
+    const blocks = await this.roomBlockRepository.findBy({ room_name });
     for (const dateStr of dates) {
       // Verifica se a data está na lista de bloqueios
       const blockOnDate = blocks.find((b) => b.dates.includes(dateStr));
@@ -130,45 +134,60 @@ export class BookingsService {
     // --- 5. VALIDAÇÃO DE CONFLITOS DE AGENDAMENTO ---
 
     // Caso A: Escola Fazendária - Computador
-    if (room === 'escola_fazendaria' && tipoReserva === 'computador') {
-      const setting = await this.roomSettingRepository.findOneBy({
-        room: 'escola_fazendaria',
-      });
-      const availableComputers = setting?.available_computers || 0;
+    // Limite de 5 computadores por hora (status diferente de 'rejected')
+    if (room_name === 'escola_fazendaria' && tipoReserva === 'computador') {
+      const MAX_COMPUTERS_PER_HOUR = 5;
 
       for (const dateStr of dates) {
-        const bookingsOnDate = await this.bookingRepository.find({
-          where: {
-            room: 'escola_fazendaria',
-            tipo_reserva: 'computador',
-            status: In(['approved', 'pending', 'em_analise']),
-            dates: Like(`%${dateStr}%`),
-            hora_inicio: LessThan(horaFim),
-            hora_fim: MoreThan(horaInicio),
-          },
-        });
+        // Verifica disponibilidade para cada hora do intervalo solicitado
+        const [startHour] = horaInicio.split(':').map(Number);
+        const [endHour] = horaFim.split(':').map(Number);
 
-        const computersInUse = bookingsOnDate.reduce(
-          (sum, b) => sum + b.numero_participantes,
-          0,
-        );
+        for (let hour = startHour; hour < endHour; hour++) {
+          const hourStr = `${hour.toString().padStart(2, '0')}:00`;
+          const nextHourStr = `${(hour + 1).toString().padStart(2, '0')}:00`;
 
-        if (computersInUse + numeroParticipantes > availableComputers) {
-          throw new BadRequestException(
-            `Não há computadores suficientes no dia ${dateStr}. Restam: ${availableComputers - computersInUse
-            }.`,
+          // Busca todas as reservas de computador que cobrem essa hora específica
+          const bookingsInHour = await this.bookingRepository.find({
+            where: {
+              room_name: 'escola_fazendaria',
+              tipo_reserva: 'computador',
+              status: Not('rejected'), // Qualquer status exceto 'rejected'
+              dates: Like(`%${dateStr}%`),
+              hora_inicio: LessThan(nextHourStr),
+              hora_fim: MoreThan(hourStr),
+            },
+          });
+
+          const computersInUse = bookingsInHour.reduce(
+            (sum, b) => sum + b.numero_participantes,
+            0,
           );
+
+          if (computersInUse + numeroParticipantes > MAX_COMPUTERS_PER_HOUR) {
+            throw new BadRequestException(
+              `Não há computadores suficientes no dia ${dateStr} às ${hourStr}. Máximo: ${MAX_COMPUTERS_PER_HOUR}, Em uso: ${computersInUse}, Solicitados: ${numeroParticipantes}.`,
+            );
+          }
         }
       }
     }
 
-    // Caso B: Salas Padrão (Delta e Receitório)
+    // Caso B: Escola Fazendária - Sala
+    // Segue padrão normal com validação de horário (09:00-17:00)
+    // Não verifica conflitos pois existem múltiplas salas físicas
+    else if (room_name === 'escola_fazendaria' && tipoReserva === 'sala') {
+      // Validação de bloqueios administrativos já foi feita anteriormente
+      // Não precisa verificar conflitos de agendamento
+    }
+
+    // Caso C: Salas Padrão (Delta e Receitório)
     // Bloqueio total se houver qualquer agendamento não recusado
-    else if (room !== 'escola_fazendaria') {
+    else if (room_name !== 'escola_fazendaria') {
       for (const dateStr of dates) {
         const existingBooking = await this.bookingRepository.findOne({
           where: {
-            room,
+            room_name,
             dates: Like(`%${dateStr}%`),
             status: Not('rejected'), // Qualquer status (pending, approved) bloqueia
             hora_inicio: LessThan(horaFim),
@@ -178,13 +197,11 @@ export class BookingsService {
 
         if (existingBooking) {
           throw new BadRequestException(
-            `Horário indisponível para a ${createBookingDto.roomName} no dia ${dateStr}.`,
+            `Horário indisponível para a ${room_name} no dia ${dateStr}.`,
           );
         }
       }
     }
-    // NOTA: Se for Escola Fazendária (Sala), não fazemos check de conflito aqui,
-    // pois são salas independentes e o Admin decide o local ao aprovar.
 
     // --- 6. SALVAR NO BANCO ---
     const newBooking = this.bookingRepository.create({
@@ -193,8 +210,7 @@ export class BookingsService {
       status: initialStatus,
       observacao,
       // Mapeamento explícito para garantir consistência
-      room: createBookingDto.room,
-      room_name: createBookingDto.roomName,
+      room_name: createBookingDto.room_name,
       tipo_reserva: createBookingDto.tipoReserva,
       nome_completo: createBookingDto.nomeCompleto,
       setor_solicitante: createBookingDto.setorSolicitante,
@@ -212,16 +228,24 @@ export class BookingsService {
 
     const savedBooking = await this.bookingRepository.save(newBooking);
 
-    // --- 7. AÇÕES PÓS-CRIAÇÃO ---
-    await this.mailService.sendBookingConfirmation(savedBooking);
-    const admins = await this.adminUserRepository.find({
-      where: [{ room_access: savedBooking.room }, { is_super_admin: true }],
-    });
+    // --- 7. AÇÕES PÓS-CRIAÇÃO (ASSÍNCRONO - NÃO BLOQUEIA RESPOSTA) ---
+    // Envia e-mails em background sem bloquear a resposta
+    setImmediate(async () => {
+      try {
+        await this.mailService.sendBookingConfirmation(savedBooking);
+        const admins = await this.adminUserRepository.find({
+          where: [{ room_access: savedBooking.room_name }, { is_super_admin: true }],
+        });
 
-    const adminEmails = [...new Set(admins.map((a) => a.email))];
-    for (const email of adminEmails) {
-      await this.mailService.sendAdminNotification(savedBooking, email);
-    }
+        const adminEmails = [...new Set(admins.map((a) => a.email))];
+        for (const email of adminEmails) {
+          await this.mailService.sendAdminNotification(savedBooking, email);
+        }
+      } catch (emailError) {
+        console.error('Erro ao enviar e-mails de notificação:', emailError);
+        // Não falha a requisição por causa de erro de e-mail
+      }
+    });
 
     return {
       success: true,
@@ -234,14 +258,14 @@ export class BookingsService {
 
   // --- SEARCH (Listagem Pública) ---
   async search(searchBookingDto: SearchBookingDto) {
-    const { room, dates, name, status, sector } = searchBookingDto;
+    const { room_name, dates, name, status, sector } = searchBookingDto;
 
     const where: FindOptionsWhere<Booking> = {};
 
     if (name) where.nome_completo = Like(`%${name}%`);
     if (status) where.status = status;
     if (sector) where.setor_solicitante = Like(`%${sector}%`);
-    if (room) where.room = room;
+    if (room_name) where.room_name = room_name;
     if (dates && dates.length > 0) {
       where.dates = In(dates);
     }
@@ -303,19 +327,58 @@ export class BookingsService {
   }
 
   // --- GET OCCUPIED HOURS (Calendário) ---
-  async getOccupiedHours(room: string, date: string) {
-    // Para Escola Fazendária:
-    // Como há múltiplas salas independentes, tecnicamente NUNCA mostramos o horário como "bloqueado visualmente"
-    // para agendamento de SALA, pois sempre cabe mais uma (até o limite físico real, que o sistema não controla automaticamente).
-    if (room === 'escola_fazendaria') {
-      return { room, date, occupiedHours: [] };
+  async getOccupiedHours(room_name: string, date: string, tipoReserva?: string) {
+    // Para Escola Fazendária - SALA:
+    // Como há múltiplas salas independentes, NUNCA mostramos horário bloqueado
+    if (room_name === 'escola_fazendaria' && tipoReserva === 'sala') {
+      return { room_name, date, occupiedHours: [] };
+    }
+
+    // Para Escola Fazendária - COMPUTADOR:
+    // Mostra horários onde 5 computadores já estão reservados
+    if (room_name === 'escola_fazendaria' && tipoReserva === 'computador') {
+      const MAX_COMPUTERS_PER_HOUR = 5;
+      const occupiedHours = new Set<string>();
+      const hoursToCheck = Array.from({ length: 24 }, (_, i) => i); // 0 a 23
+
+      for (const hour of hoursToCheck) {
+        const hourStr = `${hour.toString().padStart(2, '0')}:00`;
+        const nextHourStr = `${(hour + 1).toString().padStart(2, '0')}:00`;
+
+        const bookingsInHour = await this.bookingRepository.find({
+          where: {
+            room_name: 'escola_fazendaria',
+            tipo_reserva: 'computador',
+            status: Not('rejected'),
+            dates: Like(`%${date}%`),
+            hora_inicio: LessThan(nextHourStr),
+            hora_fim: MoreThan(hourStr),
+          },
+        });
+
+        const computersInUse = bookingsInHour.reduce(
+          (sum, b) => sum + b.numero_participantes,
+          0,
+        );
+
+        // Se atingiu o limite, marca como ocupado
+        if (computersInUse >= MAX_COMPUTERS_PER_HOUR) {
+          occupiedHours.add(hourStr);
+        }
+      }
+
+      return {
+        room_name,
+        date,
+        occupiedHours: Array.from(occupiedHours).sort(),
+      };
     }
 
     // Para Delta e Receitório:
     // Bloqueia visualmente se houver qualquer agendamento não recusado.
     const bookings = await this.bookingRepository.find({
       where: {
-        room,
+        room_name,
         dates: Like(`%${date}%`),
         status: Not('rejected'),
       },
@@ -345,7 +408,7 @@ export class BookingsService {
     });
 
     return {
-      room,
+      room_name,
       date,
       occupiedHours: Array.from(occupiedHours).sort(),
     };
