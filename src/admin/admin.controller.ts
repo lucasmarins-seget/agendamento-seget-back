@@ -31,6 +31,21 @@ import { ApprovePartialBookingDto } from './dto/approve-partial-booking.dto';
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
+  // GET /api/admin/statistics
+  @Get('statistics')
+  getStatistics(
+    @Query('room') room: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Request() req,
+  ) {
+    return this.adminService.getStatistics(req.user, {
+      room,
+      startDate,
+      endDate,
+    });
+  }
+
   @Post('users/create')
   @UseGuards(SuperAdminGuard) // Guardião 2: Garante que o usuário é SUPER ADMIN
   createAdmin(@Body() createAdminDto: CreateAdminDto) {
@@ -53,7 +68,7 @@ export class AdminController {
   @UseGuards(SuperAdminGuard)
   updateAdmin(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() updateAdminDto: UpdateAdminDto
+    @Body() updateAdminDto: UpdateAdminDto,
   ) {
     return this.adminService.updateAdmin(id, updateAdminDto);
   }

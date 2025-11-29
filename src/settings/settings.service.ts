@@ -10,7 +10,7 @@ import { Repository } from 'typeorm';
 import { CreateBlockDto } from './dto/create-block.dto';
 import { UpdateComputersDto } from './dto/update-computers.dto';
 
-const ESCOLA_FAZENDARIA = 'escola_faendaria';
+const ESCOLA_FAZENDARIA = 'escola_fazendaria';
 
 @Injectable()
 export class SettingsService {
@@ -19,7 +19,7 @@ export class SettingsService {
     private readonly roomBlockRepository: Repository<RoomBlock>,
     @InjectRepository(RoomSetting)
     private readonly roomSettingRepository: Repository<RoomSetting>,
-  ) { }
+  ) {}
 
   async createBlock(createBlockDto: CreateBlockDto, user: any) {
     for (const dateStr of createBlockDto.dates) {
@@ -51,14 +51,36 @@ export class SettingsService {
     return {
       success: true,
       message: 'Bloqueio criado com sucesso',
-      block: savedBlock,
+      block: {
+        id: savedBlock.id,
+        room_name: savedBlock.room_name,
+        dates: savedBlock.dates,
+        times: savedBlock.times,
+        reason: savedBlock.reason,
+        created_by: savedBlock.created_by,
+        createdAt: savedBlock.created_at,
+      },
     };
   }
 
   async findBlocks(room_name?: string) {
     const where = room_name ? { room_name } : {};
-    const blocks = await this.roomBlockRepository.find({ where });
-    return { blocks };
+    const blocks = await this.roomBlockRepository.find({
+      where,
+      order: { created_at: 'DESC' },
+    });
+
+    return {
+      blocks: blocks.map((block) => ({
+        id: block.id,
+        room_name: block.room_name,
+        dates: block.dates,
+        times: block.times,
+        reason: block.reason,
+        created_by: block.created_by,
+        createdAt: block.created_at,
+      })),
+    };
   }
 
   async removeBlock(id: string) {

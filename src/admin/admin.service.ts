@@ -740,4 +740,240 @@ export class AdminService {
       message: 'Administrador removido com sucesso.',
     };
   }
+
+  // --- ESTATÍSTICAS ---
+
+  async getStatistics(
+    user: AdminUserPayload,
+    filters: { room?: string; startDate?: string; endDate?: string },
+  ) {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    // Calcula início e fim da semana (segunda a sexta)
+    const dayOfWeek = today.getDay();
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diffToMonday);
+    const mondayStr = monday.toISOString().split('T')[0];
+
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4);
+    const fridayStr = friday.toISOString().split('T')[0];
+
+    // Define o filtro de sala baseado no usuário e filtros
+    let roomFilter: string | null = null;
+    if (!user.isSuperAdmin) {
+      // Admin de sala só vê dados da sua sala
+      roomFilter = user.roomAccess;
+    } else if (filters.room && filters.room !== 'all') {
+      // Super admin pode filtrar por sala específica
+      roomFilter = filters.room;
+    }
+
+    // Query base
+    const queryBuilder = this.bookingRepository.createQueryBuilder('booking');
+
+    // Aplica filtro de sala se necessário
+    if (roomFilter) {
+      queryBuilder.andWhere('booking.room_name = :room', { room: roomFilter });
+    }
+
+    // Para MySQL, não usamos unnest. Vamos buscar todos e filtrar em memória
+    // já que o campo dates é um simple-array (string separada por vírgula)
+
+    // Busca todos os bookings com os filtros aplicados
+    const allBookingsRaw = await queryBuilder.getMany();
+
+    // Filtra por período em memória (se necessário)
+    let allBookings = allBookingsRaw;
+    if (filters.startDate && filters.endDate) {
+      const startDate = filters.startDate;
+      const endDate = filters.endDate;
+      allBookings = allBookingsRaw.filter((booking) => {
+        if (!booking.dates || booking.dates.length === 0) return false;
+        // Verifica se alguma data do booking está no período
+        return booking.dates.some((dateStr) => {
+          return dateStr >= startDate && dateStr <= endDate;
+        });
+      });
+    }
+
+    // ===== ESTATÍSTICAS GERAIS =====
+
+    // Total de reservas
+    const totalBookings = allBookings.length;
+
+    // Reservas por status
+    const approvedBookings = allBookings.filter((b) => b.status === 'approved');
+    const rejectedBookings = allBookings.filter((b) => b.status === 'rejected');
+    const pendingBookings = allBookings.filter((b) => b.status === 'pending');
+    const emAnaliseBookings = allBookings.filter(
+      (b) => b.status === 'em_analise',
+    );
+
+    // Reservas de hoje (booking com data de hoje)
+    const todayBookings = allBookings.filter((b) =>
+      b.dates?.some((d) => d === todayStr),
+    );
+
+    // Reservas da semana
+    const weekBookings = allBookings.filter((b) =>
+      b.dates?.some((d) => d >= mondayStr && d <= fridayStr),
+    );
+
+    // Reservas futuras (data >= hoje)
+    const futureBookings = allBookings.filter((b) =>
+      b.dates?.some((d) => d >= todayStr),
+    );
+
+    // ===== RANKING POR SETOR (Top 7) =====
+    const sectorCount: Record<string, number> = {};
+    for (const booking of allBookings) {
+      const sector = booking.setor_solicitante || 'Não informado';
+      sectorCount[sector] = (sectorCount[sector] || 0) + 1;
+    }
+
+    const topSectors = Object.entries(sectorCount)
+      .map(([sector, count]) => ({ sector, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 7);
+
+    // ===== RESERVAS POR MÊS (últimos 6 meses) =====
+    const monthlyData: Record<string, { approved: number; rejected: number }> =
+      {};
+    const months: string[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      months.push(monthKey);
+      monthlyData[monthKey] = { approved: 0, rejected: 0 };
+    }
+
+    for (const booking of allBookings) {
+      if (!booking.dates || booking.dates.length === 0) continue;
+      const firstDate = booking.dates[0];
+      const monthKey = firstDate.substring(0, 7); // YYYY-MM
+
+      if (monthlyData[monthKey]) {
+        if (booking.status === 'approved') {
+          monthlyData[monthKey].approved++;
+        } else if (booking.status === 'rejected') {
+          monthlyData[monthKey].rejected++;
+        }
+      }
+    }
+
+    const monthlyStats = months.map((month) => {
+      const [year, m] = month.split('-');
+      const monthNames = [
+        'Jan',
+        'Fev',
+        'Mar',
+        'Abr',
+        'Mai',
+        'Jun',
+        'Jul',
+        'Ago',
+        'Set',
+        'Out',
+        'Nov',
+        'Dez',
+      ];
+      return {
+        month: `${monthNames[parseInt(m) - 1]}/${year.slice(2)}`,
+        aprovadas: monthlyData[month].approved,
+        canceladas: monthlyData[month].rejected,
+      };
+    });
+
+    // ===== RESERVAS POR DIA DA SEMANA =====
+    const weekdayCount: Record<string, number> = {
+      Segunda: 0,
+      Terça: 0,
+      Quarta: 0,
+      Quinta: 0,
+      Sexta: 0,
+    };
+
+    const weekdayNames = [
+      'Domingo',
+      'Segunda',
+      'Terça',
+      'Quarta',
+      'Quinta',
+      'Sexta',
+      'Sábado',
+    ];
+
+    for (const booking of allBookings) {
+      if (!booking.dates) continue;
+      for (const dateStr of booking.dates) {
+        const date = new Date(dateStr + 'T12:00:00'); // Adiciona horário para evitar problemas de timezone
+        const dayName = weekdayNames[date.getDay()];
+        if (weekdayCount[dayName] !== undefined) {
+          weekdayCount[dayName]++;
+        }
+      }
+    }
+
+    const weekdayStats = Object.entries(weekdayCount).map(([day, count]) => ({
+      day,
+      count,
+    }));
+
+    // ===== RESERVAS POR SALA (para super admin) =====
+    const roomCount: Record<string, number> = {};
+    for (const booking of allBookings) {
+      const room = booking.room_name || 'Não informado';
+      roomCount[room] = (roomCount[room] || 0) + 1;
+    }
+
+    const roomStats = Object.entries(roomCount).map(([room, count]) => ({
+      room,
+      count,
+    }));
+
+    // ===== LISTA DE RESERVAS RECENTES (para tabela detalhada) =====
+    // Ordena por data mais recente e pega as últimas 50
+    const recentBookings = allBookings
+      .filter((b) => b.dates && b.dates.length > 0)
+      .sort((a, b) => {
+        const dateA = a.dates?.[0] || '';
+        const dateB = b.dates?.[0] || '';
+        return dateB.localeCompare(dateA);
+      })
+      .slice(0, 50)
+      .map((booking) => ({
+        id: booking.id,
+        responsavel:
+          booking.responsavel || booking.nome_completo || 'Não informado',
+        setor: booking.setor_solicitante || 'Não informado',
+        room: booking.room_name,
+        dates: booking.dates,
+        horaInicio: booking.hora_inicio,
+        horaFim: booking.hora_fim,
+        status: booking.status,
+        finalidade: booking.finalidade || '',
+      }));
+
+    return {
+      summary: {
+        today: todayBookings.length,
+        week: weekBookings.length,
+        future: futureBookings.length,
+        total: totalBookings,
+        approved: approvedBookings.length,
+        rejected: rejectedBookings.length,
+        pending: pendingBookings.length,
+        emAnalise: emAnaliseBookings.length,
+      },
+      topSectors,
+      monthlyStats,
+      weekdayStats,
+      roomStats,
+      recentBookings,
+    };
+  }
 }

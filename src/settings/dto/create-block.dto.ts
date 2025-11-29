@@ -8,8 +8,8 @@ import {
 } from 'class-validator';
 
 export class CreateBlockDto {
-  @IsIn(['receitorio', 'escola_fazendaria', 'sala_delta'])
-  room_name: string; //
+  @IsIn(['receitorio', 'sala_delta'])
+  room_name: string;
 
   @IsArray()
   @IsDateString({}, { each: true })
