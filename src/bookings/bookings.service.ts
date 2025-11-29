@@ -33,7 +33,7 @@ export class BookingsService {
     @InjectRepository(AdminUser)
     private readonly adminUserRepository: Repository<AdminUser>,
     private readonly mailService: MailService,
-  ) { }
+  ) {}
 
   async create(createBookingDto: CreateBookingDto) {
     const {
@@ -56,12 +56,16 @@ export class BookingsService {
 
     // Regra: Hora Fim deve ser maior que Hora Início
     if (fimMinutos <= inicioMinutos) {
-      throw new BadRequestException('A hora final deve ser maior que a hora inicial.');
+      throw new BadRequestException(
+        'A hora final deve ser maior que a hora inicial.',
+      );
     }
 
     // Regra: Mínimo de 1 hora de duração
     if (fimMinutos - inicioMinutos < 60) {
-      throw new BadRequestException('O agendamento deve ter duração mínima de 1 hora.');
+      throw new BadRequestException(
+        'O agendamento deve ter duração mínima de 1 hora.',
+      );
     }
 
     // --- 2. VALIDAÇÃO DE FINAIS DE SEMANA ---
@@ -117,7 +121,7 @@ export class BookingsService {
       if (blockOnDate) {
         // Se houver bloqueio na data, verifica colisão de horário
         // Se o horário do bloqueio colidir com o do agendamento
-        const isTimeBlocked = blockOnDate.times.some(blockedTime => {
+        const isTimeBlocked = blockOnDate.times.some((blockedTime) => {
           // Lógica simplificada: se o horário bloqueado estiver DENTRO do intervalo do agendamento
           // ou se o agendamento tentar pegar o horário exato
           return blockedTime >= horaInicio && blockedTime < horaFim;
@@ -230,21 +234,26 @@ export class BookingsService {
 
     // --- 7. AÇÕES PÓS-CRIAÇÃO (ASSÍNCRONO - NÃO BLOQUEIA RESPOSTA) ---
     // Envia e-mails em background sem bloquear a resposta
-    setImmediate(async () => {
-      try {
-        await this.mailService.sendBookingConfirmation(savedBooking);
-        const admins = await this.adminUserRepository.find({
-          where: [{ room_access: savedBooking.room_name }, { is_super_admin: true }],
-        });
+    setImmediate(() => {
+      void (async () => {
+        try {
+          await this.mailService.sendBookingConfirmation(savedBooking);
+          const admins = await this.adminUserRepository.find({
+            where: [
+              { room_access: savedBooking.room_name },
+              { is_super_admin: true },
+            ],
+          });
 
-        const adminEmails = [...new Set(admins.map((a) => a.email))];
-        for (const email of adminEmails) {
-          await this.mailService.sendAdminNotification(savedBooking, email);
+          const adminEmails = [...new Set(admins.map((a) => a.email))];
+          for (const email of adminEmails) {
+            await this.mailService.sendAdminNotification(savedBooking, email);
+          }
+        } catch (emailError) {
+          console.error('Erro ao enviar e-mails de notificação:', emailError);
+          // Não falha a requisição por causa de erro de e-mail
         }
-      } catch (emailError) {
-        console.error('Erro ao enviar e-mails de notificação:', emailError);
-        // Não falha a requisição por causa de erro de e-mail
-      }
+      })();
     });
 
     return {
@@ -313,9 +322,54 @@ export class BookingsService {
       throw new NotFoundException('Agendamento não encontrado.');
     }
 
+    // Calcula se a confirmação de presença está habilitada
+    // A confirmação só pode ser feita no dia e horário do agendamento (início até fim)
+    const now = new Date();
+    const today = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const currentTime = now.toTimeString().slice(0, 5); // HH:MM
+
+    // Verifica se hoje é uma das datas do agendamento
+    const isDateValid = booking.dates.includes(today);
+
+    // Verifica se está dentro do horário (início até fim)
+    const isTimeValid =
+      currentTime >= booking.hora_inicio && currentTime <= booking.hora_fim;
+
+    // Verifica se o status é "approved"
+    const isApproved = booking.status === 'approved';
+
+    // A confirmação só está habilitada se: é uma data válida, horário válido e status aprovado
+    const canConfirm = isApproved && isDateValid && isTimeValid;
+
+    // Prepara mensagem informativa sobre quando pode confirmar
+    let confirmationMessage: string | null = null;
+    if (!isApproved) {
+      confirmationMessage =
+        'O agendamento ainda não foi aprovado. Aguarde a aprovação para confirmar presença.';
+    } else if (!isDateValid && !isTimeValid) {
+      // Formata as datas para exibição
+      const formattedDates = booking.dates
+        .map((d) => {
+          const [y, m, day] = d.split('-');
+          return `${day}/${m}/${y}`;
+        })
+        .join(', ');
+      confirmationMessage = `A confirmação de presença estará disponível nas datas ${formattedDates}, das ${booking.hora_inicio} às ${booking.hora_fim}.`;
+    } else if (!isDateValid) {
+      const formattedDates = booking.dates
+        .map((d) => {
+          const [y, m, day] = d.split('-');
+          return `${day}/${m}/${y}`;
+        })
+        .join(', ');
+      confirmationMessage = `A confirmação de presença só pode ser feita nas datas: ${formattedDates}.`;
+    } else if (!isTimeValid) {
+      confirmationMessage = `A confirmação de presença só pode ser feita das ${booking.hora_inicio} às ${booking.hora_fim}.`;
+    }
+
     return {
       id: booking.id,
-      roomName: booking.room_name,
+      room_name: booking.room_name,
       dates: booking.dates,
       startTime: booking.hora_inicio,
       endTime: booking.hora_fim,
@@ -323,11 +377,17 @@ export class BookingsService {
       sector: booking.setor_solicitante,
       status: booking.status,
       observacao: booking.observacao,
+      canConfirm,
+      confirmationMessage,
     };
   }
 
   // --- GET OCCUPIED HOURS (Calendário) ---
-  async getOccupiedHours(room_name: string, date: string, tipoReserva?: string) {
+  async getOccupiedHours(
+    room_name: string,
+    date: string,
+    tipoReserva?: string,
+  ) {
     // Para Escola Fazendária - SALA:
     // Como há múltiplas salas independentes, NUNCA mostramos horário bloqueado
     if (room_name === 'escola_fazendaria' && tipoReserva === 'sala') {
@@ -394,7 +454,7 @@ export class BookingsService {
       // Adiciona todos os horários dentro do intervalo
       const hoursToCheck = [9, 10, 11, 12, 13, 14, 15, 16, 17];
 
-      hoursToCheck.forEach(h => {
+      hoursToCheck.forEach((h) => {
         const hourInMinutes = h * 60;
         const startInMinutes = startHour * 60 + startMin;
         const endInMinutes = endHour * 60 + endMin;

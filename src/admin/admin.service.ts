@@ -9,7 +9,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Booking } from 'src/entities/booking.entity';
 import { AttendanceRecord } from 'src/entities/attendance-record.entity';
 import { AdminUser } from 'src/entities/admin-user.entity';
-import { FindOptionsWhere, Like, Repository } from 'typeorm';
+import { Employee } from 'src/entities/employee.entity';
+import { FindOptionsWhere, In, Like, Repository } from 'typeorm';
 import { RejectBookingDto } from './dto/reject-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
 import { CreateAdminDto } from '../auth/dto/create-admin.dto';
@@ -48,8 +49,33 @@ export class AdminService {
     private readonly attendanceRepository: Repository<AttendanceRecord>,
     @InjectRepository(AdminUser)
     private readonly adminUserRepository: Repository<AdminUser>,
+    @InjectRepository(Employee)
+    private readonly employeeRepository: Repository<Employee>,
     private readonly mailService: MailService,
-  ) { }
+  ) {}
+
+  // Helper para buscar nomes dos participantes a partir dos e-mails
+  private async getParticipantsWithNames(
+    emails: string[],
+  ): Promise<{ email: string; name: string }[]> {
+    if (!emails || emails.length === 0) return [];
+
+    const normalizedEmails = emails.map((e) => e.toLowerCase());
+    const employees = await this.employeeRepository.find({
+      where: { email: In(normalizedEmails) },
+      select: ['email', 'full_name'],
+    });
+
+    const emailToName = new Map<string, string>();
+    employees.forEach((emp) => {
+      emailToName.set(emp.email.toLowerCase(), emp.full_name);
+    });
+
+    return emails.map((email) => ({
+      email,
+      name: emailToName.get(email.toLowerCase()) || email, // Retorna o email se não encontrar o nome
+    }));
+  }
 
   // Checa se o admin tem permissão para acessar um agendamento
   private checkPermission(booking: Booking, user: AdminUserPayload) {
@@ -92,7 +118,7 @@ export class AdminService {
       // e o filtro vem como string 'YYYY-MM-DD', a comparação direta funciona se for campo simples.
       // SE for array de datas (nova versão), precisaríamos usar Like.
       // Assumindo compatibilidade com a versão anterior ou busca exata por enquanto.
-      // Se mudamos para array, o ideal seria: 
+      // Se mudamos para array, o ideal seria:
       if (filters.date) where.dates = Like(`%${filters.date}%`);
 
       if (filters.name) where.nome_completo = Like(`%${filters.name}%`);
@@ -138,6 +164,11 @@ export class AdminService {
     }
     this.checkPermission(booking, user);
 
+    // Busca os nomes dos participantes a partir dos e-mails
+    const participantesComNomes = await this.getParticipantsWithNames(
+      booking.participantes || [],
+    );
+
     // Retorna os dados no mesmo padrão flat snake_case como os bookings normais
     return {
       id: booking.id,
@@ -153,7 +184,7 @@ export class AdminService {
       hora_inicio: booking.hora_inicio,
       hora_fim: booking.hora_fim,
       numero_participantes: booking.numero_participantes,
-      participantes: booking.participantes,
+      participantes: participantesComNomes, // Agora retorna array de { email, name }
       finalidade: booking.finalidade,
       descricao: booking.descricao,
       observacao: booking.observacao,
@@ -246,7 +277,10 @@ export class AdminService {
     const savedBooking = await this.bookingRepository.save(booking);
 
     // Envia e-mail notificando a mudança com a observação do admin
-    await this.mailService.sendUnderAnalysisEmail(savedBooking, observacaoAdmin);
+    await this.mailService.sendUnderAnalysisEmail(
+      savedBooking,
+      observacaoAdmin,
+    );
 
     return {
       success: true,
@@ -322,12 +356,14 @@ export class AdminService {
       approved_at: null,
       rejected_by: user.email,
       rejected_at: new Date(),
-      rejection_reason: rejectionReason || 'Datas indisponíveis na solicitação parcial.',
+      rejection_reason:
+        rejectionReason || 'Datas indisponíveis na solicitação parcial.',
       created_at: new Date(), // Novo timestamp
       updated_at: new Date(),
     });
 
-    const savedRejectedBooking = await this.bookingRepository.save(rejectedBooking);
+    const savedRejectedBooking =
+      await this.bookingRepository.save(rejectedBooking);
 
     // 4. Disparar E-mails
     // Aprovado:
@@ -407,35 +443,54 @@ export class AdminService {
 
     // Mapeamento explícito de DTO (camelCase) para Entity (snake_case)
     // Isso é necessário porque o Object.assign direto não lida com a diferença de nomes
-    if (updateBookingDto.room_name) booking.room_name = updateBookingDto.room_name;
-    if (updateBookingDto.tipoReserva) booking.tipo_reserva = updateBookingDto.tipoReserva;
-    if (updateBookingDto.nomeCompleto) booking.nome_completo = updateBookingDto.nomeCompleto;
-    if (updateBookingDto.setorSolicitante) booking.setor_solicitante = updateBookingDto.setorSolicitante;
-    if (updateBookingDto.horaInicio) booking.hora_inicio = updateBookingDto.horaInicio;
+    if (updateBookingDto.room_name)
+      booking.room_name = updateBookingDto.room_name;
+    if (updateBookingDto.tipoReserva)
+      booking.tipo_reserva = updateBookingDto.tipoReserva;
+    if (updateBookingDto.nomeCompleto)
+      booking.nome_completo = updateBookingDto.nomeCompleto;
+    if (updateBookingDto.setorSolicitante)
+      booking.setor_solicitante = updateBookingDto.setorSolicitante;
+    if (updateBookingDto.horaInicio)
+      booking.hora_inicio = updateBookingDto.horaInicio;
     if (updateBookingDto.horaFim) booking.hora_fim = updateBookingDto.horaFim;
-    if (updateBookingDto.numeroParticipantes) booking.numero_participantes = updateBookingDto.numeroParticipantes;
+    if (updateBookingDto.numeroParticipantes)
+      booking.numero_participantes = updateBookingDto.numeroParticipantes;
 
     // Campos que já coincidem ou são simples
     if (updateBookingDto.dates) booking.dates = updateBookingDto.dates;
-    if (updateBookingDto.responsavel) booking.responsavel = updateBookingDto.responsavel;
+    if (updateBookingDto.responsavel)
+      booking.responsavel = updateBookingDto.responsavel;
     if (updateBookingDto.telefone) booking.telefone = updateBookingDto.telefone;
     if (updateBookingDto.email) booking.email = updateBookingDto.email;
-    if (updateBookingDto.participantes) booking.participantes = updateBookingDto.participantes;
-    if (updateBookingDto.finalidade) booking.finalidade = updateBookingDto.finalidade;
-    if (updateBookingDto.descricao) booking.descricao = updateBookingDto.descricao;
-    if (updateBookingDto.observacao !== undefined) booking.observacao = updateBookingDto.observacao;
+    if (updateBookingDto.participantes)
+      booking.participantes = updateBookingDto.participantes;
+    if (updateBookingDto.finalidade)
+      booking.finalidade = updateBookingDto.finalidade;
+    if (updateBookingDto.descricao)
+      booking.descricao = updateBookingDto.descricao;
+    if (updateBookingDto.observacao !== undefined)
+      booking.observacao = updateBookingDto.observacao;
 
     // Equipamentos e Específicos (mapeamento)
     if (updateBookingDto.projetor) booking.projetor = updateBookingDto.projetor;
-    if (updateBookingDto.somProjetor) booking.som_projetor = updateBookingDto.somProjetor;
+    if (updateBookingDto.somProjetor)
+      booking.som_projetor = updateBookingDto.somProjetor;
     if (updateBookingDto.internet) booking.internet = updateBookingDto.internet;
-    if (updateBookingDto.wifiTodos) booking.wifi_todos = updateBookingDto.wifiTodos;
-    if (updateBookingDto.conexaoCabo) booking.conexao_cabo = updateBookingDto.conexaoCabo;
-    if (updateBookingDto.softwareEspecifico) booking.software_especifico = updateBookingDto.softwareEspecifico;
-    if (updateBookingDto.qualSoftware) booking.qual_software = updateBookingDto.qualSoftware;
-    if (updateBookingDto.papelaria) booking.papelaria = updateBookingDto.papelaria;
-    if (updateBookingDto.materialExterno) booking.material_externo = updateBookingDto.materialExterno;
-    if (updateBookingDto.apoioEquipe) booking.apoio_equipe = updateBookingDto.apoioEquipe;
+    if (updateBookingDto.wifiTodos)
+      booking.wifi_todos = updateBookingDto.wifiTodos;
+    if (updateBookingDto.conexaoCabo)
+      booking.conexao_cabo = updateBookingDto.conexaoCabo;
+    if (updateBookingDto.softwareEspecifico)
+      booking.software_especifico = updateBookingDto.softwareEspecifico;
+    if (updateBookingDto.qualSoftware)
+      booking.qual_software = updateBookingDto.qualSoftware;
+    if (updateBookingDto.papelaria)
+      booking.papelaria = updateBookingDto.papelaria;
+    if (updateBookingDto.materialExterno)
+      booking.material_externo = updateBookingDto.materialExterno;
+    if (updateBookingDto.apoioEquipe)
+      booking.apoio_equipe = updateBookingDto.apoioEquipe;
 
     const updatedBooking = await this.bookingRepository.save(booking);
 
@@ -461,15 +516,19 @@ export class AdminService {
     this.checkPermission(booking, user);
 
     const now = new Date();
-    // Pega a primeira data para referência
-    const firstDateStr =
-      booking.dates && booking.dates.length > 0 ? booking.dates[0] : null;
+    const dates = booking.dates || [];
 
-    let bookingStartTime = now;
-    if (firstDateStr) {
-      const [year, month, day] = firstDateStr.split('-').map(Number);
-      const [hour, minute] = booking.hora_inicio.split(':').map(Number);
-      bookingStartTime = new Date(year, month - 1, day, hour, minute);
+    // Ordena as datas e pega a última para determinar quando o agendamento termina
+    const sortedDates = [...dates].sort();
+    const lastDateStr =
+      sortedDates.length > 0 ? sortedDates[sortedDates.length - 1] : null;
+
+    // Calcula o horário de término do agendamento (última data + hora_fim)
+    let bookingEndTime = now;
+    if (lastDateStr) {
+      const [year, month, day] = lastDateStr.split('-').map(Number);
+      const [hour, minute] = booking.hora_fim.split(':').map(Number);
+      bookingEndTime = new Date(year, month - 1, day, hour, minute);
     }
 
     const attendance: AttendanceResponse[] = (
@@ -490,23 +549,35 @@ export class AdminService {
 
     const respondedEmails = attendance.map((a) => a.email);
 
-    for (const email of booking.participantes) {
-      if (!respondedEmails.includes(email.toLowerCase())) {
-        let status = 'Pendente';
-        if (now > bookingStartTime) {
-          status = 'Não Confirmado';
-        }
+    // Busca nomes dos participantes que ainda não confirmaram
+    const pendingEmails = (booking.participantes || []).filter(
+      (email) => !respondedEmails.includes(email.toLowerCase()),
+    );
+    const participantsWithNames =
+      await this.getParticipantsWithNames(pendingEmails);
+    const emailToName = new Map(
+      participantsWithNames.map((p) => [p.email.toLowerCase(), p.name]),
+    );
 
-        attendance.push({
-          id: null,
-          fullName: 'N/A (Convidado)',
-          email: email,
-          confirmedAt: null,
-          confirmedTime: null,
-          isVisitor: null,
-          status: status,
-        });
+    for (const email of pendingEmails) {
+      // Se já passou do horário de término do agendamento, marca como "Não Confirmado"
+      // Caso contrário, está "Pendente" (ainda pode confirmar)
+      let status = 'Pendente';
+      if (now > bookingEndTime) {
+        status = 'Não Confirmado';
       }
+
+      const participantName = emailToName.get(email.toLowerCase()) || email;
+
+      attendance.push({
+        id: null,
+        fullName: participantName,
+        email: email,
+        confirmedAt: null,
+        confirmedTime: null,
+        isVisitor: null,
+        status: status,
+      });
     }
 
     return {

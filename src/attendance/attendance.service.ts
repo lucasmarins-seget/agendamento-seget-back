@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AttendanceRecord } from 'src/entities/attendance-record.entity';
 import { Booking } from 'src/entities/booking.entity';
@@ -18,7 +22,7 @@ export class AttendanceService {
     @InjectRepository(Employee)
     private readonly employeeRepository: Repository<Employee>,
     private readonly mailService: MailService,
-  ) { }
+  ) {}
 
   async verifyEmail(verifyEmailDto: VerifyEmailDto) {
     const { email, bookingId } = verifyEmailDto;
@@ -74,6 +78,69 @@ export class AttendanceService {
       throw new NotFoundException(
         'Agendamento não encontrado ou não aprovado.',
       );
+    }
+
+    // Validação de horário: só pode confirmar dentro do período do agendamento
+    const now = new Date();
+    const dates = booking.dates || [];
+
+    if (dates.length > 0) {
+      // Pega a primeira e última data do agendamento
+      const sortedDates = [...dates].sort();
+      const firstDateStr = sortedDates[0];
+      const lastDateStr = sortedDates[sortedDates.length - 1];
+
+      // Monta o horário de início (primeira data + hora_inicio)
+      const [startYear, startMonth, startDay] = firstDateStr
+        .split('-')
+        .map(Number);
+      const [startHour, startMinute] = booking.hora_inicio
+        .split(':')
+        .map(Number);
+      const bookingStart = new Date(
+        startYear,
+        startMonth - 1,
+        startDay,
+        startHour,
+        startMinute,
+      );
+
+      // Monta o horário de fim (última data + hora_fim)
+      const [endYear, endMonth, endDay] = lastDateStr.split('-').map(Number);
+      const [endHour, endMinute] = booking.hora_fim.split(':').map(Number);
+      const bookingEnd = new Date(
+        endYear,
+        endMonth - 1,
+        endDay,
+        endHour,
+        endMinute,
+      );
+
+      if (now < bookingStart) {
+        const formattedStart = bookingStart.toLocaleString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        throw new BadRequestException(
+          `A confirmação de presença só pode ser realizada a partir do início do agendamento (${formattedStart}).`,
+        );
+      }
+
+      if (now > bookingEnd) {
+        const formattedEnd = bookingEnd.toLocaleString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        throw new BadRequestException(
+          `O período para confirmação de presença já encerrou (${formattedEnd}). Entre em contato com a administração.`,
+        );
+      }
     }
 
     const employee = await this.employeeRepository.findOneBy({

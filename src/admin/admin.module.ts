@@ -7,11 +7,12 @@ import { Booking } from 'src/entities/booking.entity';
 import { AttendanceRecord } from 'src/entities/attendance-record.entity';
 import { MailModule } from 'src/mail/mail.module';
 import { AdminUser } from 'src/entities/admin-user.entity';
+import { Employee } from 'src/entities/employee.entity';
 
 @Module({
   imports: [
     AuthModule,
-    TypeOrmModule.forFeature([Booking, AttendanceRecord, AdminUser,]),
+    TypeOrmModule.forFeature([Booking, AttendanceRecord, AdminUser, Employee]),
     MailModule,
   ],
   controllers: [AdminController],
