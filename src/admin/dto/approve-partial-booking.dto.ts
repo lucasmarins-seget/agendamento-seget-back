@@ -10,4 +10,9 @@ export class ApprovePartialBookingDto {
   @IsOptional()
   @MaxLength(1000)
   rejectionReason?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  local?: string;
 }

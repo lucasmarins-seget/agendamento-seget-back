@@ -25,6 +25,7 @@ import { CreateAdminDto } from 'src/auth/dto/create-admin.dto';
 import { UpdateAdminDto } from './dto/update-admin.dto';
 import { AnalyzeBookingDto } from './dto/analyze-booking.dto';
 import { ApprovePartialBookingDto } from './dto/approve-partial-booking.dto';
+import { ApproveBookingDto } from './dto/approve-booking.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('admin')
@@ -37,12 +38,33 @@ export class AdminController {
     @Query('room') room: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
     @Request() req,
   ) {
     return this.adminService.getStatistics(req.user, {
       room,
       startDate,
       endDate,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
+    });
+  }
+
+  // GET /api/admin/statistics/bookings - Busca reservas filtradas por tipo
+  @Get('statistics/bookings')
+  getFilteredBookings(
+    @Query('filterType') filterType: string, // 'today' | 'week' | 'future' | 'total' | 'approved' | 'rejected' | 'pending' | 'em_analise'
+    @Query('room') room: string,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+    @Request() req,
+  ) {
+    return this.adminService.getFilteredBookings(req.user, {
+      filterType,
+      room,
+      page: parseInt(page) || 1,
+      limit: parseInt(limit) || 10,
     });
   }
 
@@ -101,8 +123,12 @@ export class AdminController {
   }
 
   @Patch('bookings/:id/approve')
-  approve(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
-    return this.adminService.approve(id, req.user);
+  approve(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() approveBookingDto: ApproveBookingDto,
+    @Request() req,
+  ) {
+    return this.adminService.approve(id, req.user, approveBookingDto.local);
   }
 
   @Patch('bookings/:id/reject')

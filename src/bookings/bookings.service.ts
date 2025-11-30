@@ -237,17 +237,20 @@ export class BookingsService {
     setImmediate(() => {
       void (async () => {
         try {
-          await this.mailService.sendBookingConfirmation(savedBooking);
-          const admins = await this.adminUserRepository.find({
-            where: [
-              { room_access: savedBooking.room_name },
-              { is_super_admin: true },
-            ],
+          // 1. Envia e-mail estilizado para o solicitante
+          await this.mailService.sendNewBookingToRequester(savedBooking);
+
+          // 2. Busca APENAS o admin da sala (não super admin)
+          const roomAdmin = await this.adminUserRepository.findOne({
+            where: {
+              room_access: savedBooking.room_name,
+              is_super_admin: false,
+            },
           });
 
-          const adminEmails = [...new Set(admins.map((a) => a.email))];
-          for (const email of adminEmails) {
-            await this.mailService.sendAdminNotification(savedBooking, email);
+          // 3. Envia e-mail para o admin da sala se existir
+          if (roomAdmin) {
+            await this.mailService.sendNewBookingToRoomAdmin(savedBooking, roomAdmin.email);
           }
         } catch (emailError) {
           console.error('Erro ao enviar e-mails de notificação:', emailError);

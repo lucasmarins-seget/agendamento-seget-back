@@ -10,13 +10,422 @@ const ROOM_LABELS: Record<string, string> = {
   escola_fazendaria: 'Escola Fazendária',
 };
 
+// Cores por status
+const STATUS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  pending: { bg: '#fef3c7', text: '#92400e', border: '#f59e0b' },
+  em_analise: { bg: '#dbeafe', text: '#1e40af', border: '#3b82f6' },
+  approved: { bg: '#d1fae5', text: '#065f46', border: '#10b981' },
+  rejected: { bg: '#fee2e2', text: '#991b1b', border: '#ef4444' },
+};
+
+// Labels de status
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Pendente',
+  em_analise: 'Em Análise',
+  approved: 'Aprovado',
+  rejected: 'Rejeitado',
+};
+
+// Cores por sala
+const ROOM_COLORS: Record<string, string> = {
+  sala_delta: '#8b5cf6', // Roxo
+  receitorio: '#f59e0b', // Amarelo/Laranja
+  escola_fazendaria: '#10b981', // Verde
+};
+
 function getRoomLabel(roomId: string): string {
   return ROOM_LABELS[roomId] || roomId;
+}
+
+function formatDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function formatPhone(phone: string): string {
+  // Formata telefone: (21) 99999-9999
+  if (phone.length === 11) {
+    return `(${phone.slice(0, 2)}) ${phone.slice(2, 7)}-${phone.slice(7)}`;
+  } else if (phone.length === 10) {
+    return `(${phone.slice(0, 2)}) ${phone.slice(2, 6)}-${phone.slice(6)}`;
+  }
+  return phone;
 }
 
 @Injectable()
 export class MailService {
   constructor(private readonly mailerService: MailerService) {}
+
+  // Gera o template base do e-mail estilizado
+  private generateEmailTemplate(
+    title: string,
+    content: string,
+    statusColor: { bg: string; text: string; border: string },
+    roomColor: string,
+  ): string {
+    // Cor padrão da Prefeitura de Maricá para o header
+    const headerColor = '#bd202e';
+    
+    return `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6;">
+  <table role="presentation" style="width: 100%; border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding: 40px 0;">
+        <table role="presentation" style="width: 600px; max-width: 100%; border-collapse: collapse; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);">
+          
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, ${headerColor} 0%, ${headerColor}dd 100%); padding: 32px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                🏢 Sistema de Agendamentos SEGET
+              </h1>
+            </td>
+          </tr>
+          
+          <!-- Status Badge -->
+          <tr>
+            <td style="padding: 24px 32px 0;">
+              <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td align="center">
+                    <span style="display: inline-block; padding: 8px 24px; background-color: ${statusColor.bg}; color: ${statusColor.text}; border: 2px solid ${statusColor.border}; border-radius: 50px; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                      ${title}
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 24px 32px;">
+              ${content}
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f9fafb; padding: 24px 32px; border-top: 1px solid #e5e7eb;">
+              <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="text-align: center;">
+                    <p style="margin: 0 0 8px; color: #6b7280; font-size: 13px;">
+                      Este é um e-mail automático, por favor não responda.
+                    </p>
+                    <p style="margin: 0; color: #9ca3af; font-size: 12px;">
+                      © ${new Date().getFullYear()} SEGET - Secretaria de Gestão
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+  }
+
+  // Gera seção de informações do booking
+  private generateBookingInfoSection(booking: Booking, isAdmin: boolean = false): string {
+    const formattedDates = booking.dates.map(formatDate).join(', ');
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+    
+    // Seção do solicitante
+    let content = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600; display: flex; align-items: center;">
+          👤 Dados do Solicitante
+        </h2>
+        <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f9fafb; border-radius: 12px; overflow: hidden;">
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+              <span style="color: #6b7280; font-size: 13px;">Nome Completo</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.nome_completo}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+              <span style="color: #6b7280; font-size: 13px;">Setor</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.setor_solicitante}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+              <span style="color: #6b7280; font-size: 13px;">Responsável</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.responsavel}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+              <span style="color: #6b7280; font-size: 13px;">Telefone</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${formatPhone(booking.telefone)}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px;">
+              <span style="color: #6b7280; font-size: 13px;">E-mail</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.email}</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `;
+
+    // Seção da reserva
+    content += `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
+          📅 Dados da Reserva
+        </h2>
+        <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f9fafb; border-radius: 12px; overflow: hidden;">
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+              <span style="color: #6b7280; font-size: 13px;">Sala</span><br>
+              <span style="color: ${roomColor}; font-size: 15px; font-weight: 600;">${getRoomLabel(booking.room_name)}</span>
+            </td>
+          </tr>
+          ${booking.tipo_reserva ? `
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+              <span style="color: #6b7280; font-size: 13px;">Tipo de Reserva</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.tipo_reserva === 'sala' ? 'Sala' : 'Computador'}</span>
+            </td>
+          </tr>
+          ` : ''}
+          ${booking.local ? `
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+              <span style="color: #6b7280; font-size: 13px;">Local do Evento</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.local}</span>
+            </td>
+          </tr>
+          ` : ''}
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+              <span style="color: #6b7280; font-size: 13px;">Data(s)</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${formattedDates}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+              <span style="color: #6b7280; font-size: 13px;">Horário</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.hora_inicio} às ${booking.hora_fim}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px;">
+              <span style="color: #6b7280; font-size: 13px;">Nº de Participantes</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.numero_participantes}</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `;
+
+    // Seção do evento
+    content += `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
+          📝 Detalhes do Evento
+        </h2>
+        <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f9fafb; border-radius: 12px; overflow: hidden;">
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
+              <span style="color: #6b7280; font-size: 13px;">Finalidade</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.finalidade}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px;">
+              <span style="color: #6b7280; font-size: 13px;">Descrição</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.descricao}</span>
+            </td>
+          </tr>
+          ${booking.observacao ? `
+          <tr>
+            <td style="padding: 12px 16px; border-top: 1px solid #e5e7eb;">
+              <span style="color: #6b7280; font-size: 13px;">Observações</span><br>
+              <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.observacao}</span>
+            </td>
+          </tr>
+          ` : ''}
+        </table>
+      </div>
+    `;
+
+    // Seção de equipamentos
+    const equipamentos: string[] = [];
+    if (booking.projetor === 'sim') equipamentos.push('Projetor');
+    if (booking.som_projetor === 'sim') equipamentos.push('Som do Projetor');
+    if (booking.internet === 'sim') equipamentos.push('Internet');
+    if (booking.wifi_todos === 'sim') equipamentos.push('Wi-Fi para Todos');
+    if (booking.conexao_cabo === 'sim') equipamentos.push('Conexão a Cabo');
+
+    if (equipamentos.length > 0) {
+      content += `
+        <div style="margin-bottom: 24px;">
+          <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
+            🔌 Equipamentos Solicitados
+          </h2>
+          <div style="background-color: #f9fafb; border-radius: 12px; padding: 16px;">
+            ${equipamentos.map(eq => `
+              <span style="display: inline-block; margin: 4px; padding: 6px 12px; background-color: #e5e7eb; border-radius: 20px; font-size: 13px; color: #374151;">
+                ✓ ${eq}
+              </span>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // Seção específica (para Escola Fazendária e Receitório)
+    const especificos: string[] = [];
+    if (booking.software_especifico === 'sim' && booking.qual_software) {
+      especificos.push(`Software Específico: ${booking.qual_software}`);
+    }
+    if (booking.papelaria) {
+      especificos.push(`Papelaria: ${booking.papelaria}`);
+    }
+    if (booking.material_externo) {
+      especificos.push(`Material Externo: ${booking.material_externo}`);
+    }
+    if (booking.apoio_equipe === 'sim') {
+      especificos.push('Apoio da Equipe');
+    }
+
+    if (especificos.length > 0) {
+      content += `
+        <div style="margin-bottom: 24px;">
+          <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
+            📋 Recursos Adicionais
+          </h2>
+          <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f9fafb; border-radius: 12px; overflow: hidden;">
+            ${especificos.map((item, index) => `
+              <tr>
+                <td style="padding: 12px 16px; ${index < especificos.length - 1 ? 'border-bottom: 1px solid #e5e7eb;' : ''}">
+                  <span style="color: #111827; font-size: 15px; font-weight: 500;">• ${item}</span>
+                </td>
+              </tr>
+            `).join('')}
+          </table>
+        </div>
+      `;
+    }
+
+    // Lista de participantes (apenas se for admin)
+    if (isAdmin && booking.participantes && booking.participantes.length > 0) {
+      content += `
+        <div style="margin-bottom: 24px;">
+          <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
+            👥 Participantes (${booking.participantes.length})
+          </h2>
+          <div style="background-color: #f9fafb; border-radius: 12px; padding: 16px;">
+            ${booking.participantes.map(p => `
+              <div style="margin: 4px 0; padding: 8px 12px; background-color: #ffffff; border-radius: 8px; font-size: 14px; color: #374151; border: 1px solid #e5e7eb;">
+                📧 ${p}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    return content;
+  }
+
+  // E-mail de confirmação de agendamento criado (para o solicitante)
+  async sendNewBookingToRequester(booking: Booking) {
+    const statusColor = STATUS_COLORS.pending;
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+
+    const greeting = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
+          Olá, ${booking.nome_completo}! 👋
+        </h2>
+        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+          Sua solicitação de agendamento foi recebida e está <strong style="color: ${statusColor.text};">pendente de análise</strong>.
+          Você receberá uma notificação assim que houver uma atualização.
+        </p>
+      </div>
+    `;
+
+    const bookingInfo = this.generateBookingInfoSection(booking, false);
+
+    const content = greeting + bookingInfo;
+
+    const html = this.generateEmailTemplate(
+      'Solicitação Recebida',
+      content,
+      statusColor,
+      roomColor,
+    );
+
+    await this.mailerService.sendMail({
+      to: booking.email,
+      subject: `📋 Solicitação de Agendamento Recebida - ${getRoomLabel(booking.room_name)}`,
+      html,
+    });
+  }
+
+  // E-mail de notificação para o admin da sala
+  async sendNewBookingToRoomAdmin(booking: Booking, adminEmail: string) {
+    const statusColor = STATUS_COLORS.pending;
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+
+    const greeting = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
+          Nova Solicitação de Agendamento 🔔
+        </h2>
+        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+          Uma nova solicitação de agendamento foi recebida para a <strong style="color: ${roomColor};">${getRoomLabel(booking.room_name)}</strong>.
+          Por favor, analise os detalhes abaixo e aprove ou rejeite a solicitação.
+        </p>
+      </div>
+    `;
+
+    const bookingInfo = this.generateBookingInfoSection(booking, true);
+
+    const actionSection = `
+      <div style="text-align: center; margin-top: 24px; padding: 20px; background-color: #fef3c7; border-radius: 12px; border: 1px solid #f59e0b;">
+        <p style="margin: 0 0 8px; color: #92400e; font-size: 14px; font-weight: 500;">
+          ⚠️ Esta solicitação aguarda sua análise
+        </p>
+        <p style="margin: 0; color: #92400e; font-size: 13px;">
+          Acesse o painel administrativo para aprovar ou rejeitar este agendamento.
+        </p>
+      </div>
+    `;
+
+    const content = greeting + bookingInfo + actionSection;
+
+    const html = this.generateEmailTemplate(
+      'Nova Solicitação Pendente',
+      content,
+      statusColor,
+      roomColor,
+    );
+
+    await this.mailerService.sendMail({
+      to: adminEmail,
+      subject: `🔔 Nova Solicitação Pendente - ${getRoomLabel(booking.room_name)}`,
+      html,
+    });
+  }
 
   async sendBookingConfirmation(booking: Booking) {
     await this.mailerService.sendMail({
@@ -26,11 +435,415 @@ export class MailService {
     });
   }
 
-  async sendApprovalEmail(booking: Booking) {
+  // Helper para gerar link do Google Calendar
+  private generateGoogleCalendarLink(booking: Booking): string {
+    // Define o local baseado na sala
+    let location: string;
+    if (booking.room_name === 'escola_fazendaria') {
+      location = booking.local || 'Escola Fazendária - SEGET';
+    } else {
+      location = 'Rua Álvares de Castro, 272 - Maricá/RJ';
+    }
+
+    // Formato das datas para Google Calendar (YYYYMMDDTHHmmss)
+    const firstDate = booking.dates[0];
+    const [year, month, day] = firstDate.split('-');
+    const [startHour, startMin] = booking.hora_inicio.split(':');
+    const [endHour, endMin] = booking.hora_fim.split(':');
+
+    // Converte para formato Google Calendar
+    const startDateTime = `${year}${month}${day}T${startHour}${startMin}00`;
+    const endDateTime = `${year}${month}${day}T${endHour}${endMin}00`;
+
+    // Descrição do evento
+    const description = `Evento: ${booking.finalidade}\\n\\nSolicitante: ${booking.nome_completo}\\nSetor: ${booking.setor_solicitante}\\n\\nDescrição: ${booking.descricao}\\n\\n📍 Local: ${location}`;
+
+    // Título do evento
+    const title = `${booking.finalidade} - ${getRoomLabel(booking.room_name)}`;
+
+    // Monta URL do Google Calendar
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: title,
+      dates: `${startDateTime}/${endDateTime}`,
+      details: description,
+      location: location,
+      ctz: 'America/Sao_Paulo',
+    });
+
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  }
+
+  // E-mail de aprovação para o SOLICITANTE
+  async sendApprovalEmailToRequester(booking: Booking) {
+    const statusColor = STATUS_COLORS.approved;
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+    
+    // Define o local baseado na sala
+    let location: string;
+    if (booking.room_name === 'escola_fazendaria') {
+      location = booking.local || 'Escola Fazendária - SEGET';
+    } else {
+      location = 'Rua Álvares de Castro, 272 - Maricá/RJ';
+    }
+
+    const googleCalendarLink = this.generateGoogleCalendarLink(booking);
+    const formattedDates = booking.dates.map(formatDate).join(', ');
+
+    const content = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
+          Parabéns, ${booking.nome_completo}! 🎉
+        </h2>
+        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+          Sua solicitação de agendamento foi <strong style="color: ${statusColor.text};">APROVADA</strong>!
+        </p>
+      </div>
+
+      ${booking.observacao_admin ? `
+      <div style="margin-bottom: 24px; padding: 16px; background-color: #f0fdf4; border-radius: 12px; border-left: 4px solid #10b981;">
+        <p style="margin: 0 0 8px; color: #065f46; font-size: 13px; font-weight: 600;">💬 Mensagem da Administração:</p>
+        <p style="margin: 0; color: #065f46; font-size: 14px;">${booking.observacao_admin}</p>
+      </div>
+      ` : ''}
+
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
+          📅 Detalhes do Agendamento
+        </h2>
+        <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f0fdf4; border-radius: 12px; overflow: hidden; border: 1px solid #d1fae5;">
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">Sala</span><br>
+              <span style="color: ${roomColor}; font-size: 15px; font-weight: 600;">${getRoomLabel(booking.room_name)}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">📍 Local</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${location}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">Data(s)</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${formattedDates}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">Horário</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.hora_inicio} às ${booking.hora_fim}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px;">
+              <span style="color: #065f46; font-size: 13px;">Finalidade</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.finalidade}</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Botão Google Calendar -->
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${googleCalendarLink}" target="_blank" style="display: inline-block; padding: 14px 32px; background-color: #4285f4; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 600; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">
+          📅 Adicionar ao Google Agenda
+        </a>
+        <p style="margin: 12px 0 0; color: #6b7280; font-size: 13px;">
+          Clique para salvar este evento no seu Google Agenda
+        </p>
+      </div>
+
+      <div style="margin-top: 24px; padding: 20px; background-color: #dbeafe; border-radius: 12px; border: 1px solid #93c5fd;">
+        <p style="margin: 0; color: #1e40af; font-size: 14px; text-align: center;">
+          📱 No dia e horário do evento, você receberá um link com QR Code para confirmar sua presença na reunião.
+        </p>
+      </div>
+    `;
+
+    const html = this.generateEmailTemplate(
+      'Agendamento Aprovado',
+      content,
+      statusColor,
+      roomColor,
+    );
+
     await this.mailerService.sendMail({
       to: booking.email,
-      subject: 'Agendamento Aprovado',
-      html: `Olá ${booking.nome_completo}, <br><br>Sua solicitação para a sala ${getRoomLabel(booking.room_name)} foi <b>aprovada</b>.`,
+      subject: `✅ Agendamento Aprovado - ${getRoomLabel(booking.room_name)}`,
+      html,
+    });
+  }
+
+  // E-mail de aprovação para os PARTICIPANTES
+  async sendApprovalEmailToParticipant(booking: Booking, participantEmail: string, frontendUrl: string) {
+    const statusColor = STATUS_COLORS.approved;
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+    
+    // Define o local baseado na sala
+    let location: string;
+    if (booking.room_name === 'escola_fazendaria') {
+      location = booking.local || 'Escola Fazendária - SEGET';
+    } else {
+      location = 'Rua Álvares de Castro, 272 - Maricá/RJ';
+    }
+
+    const googleCalendarLink = this.generateGoogleCalendarLink(booking);
+    const formattedDates = booking.dates.map(formatDate).join(', ');
+
+    const content = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
+          Notificação de Evento 📋
+        </h2>
+        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+          Você é participante de um evento na <strong style="color: ${roomColor};">${getRoomLabel(booking.room_name)}</strong>. Leia abaixo informações referentes ao agendamento.
+        </p>
+      </div>
+
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
+          📋 Informações do Evento
+        </h2>
+        <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f0fdf4; border-radius: 12px; overflow: hidden; border: 1px solid #d1fae5;">
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">🏢 Sala</span><br>
+              <span style="color: ${roomColor}; font-size: 15px; font-weight: 600;">${getRoomLabel(booking.room_name)}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">📍 Local</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${location}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">📅 Data(s)</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${formattedDates}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">🕐 Horário</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.hora_inicio} às ${booking.hora_fim}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px;">
+              <span style="color: #065f46; font-size: 13px;">👤 Solicitante</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.nome_completo}</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Botão Google Calendar -->
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${googleCalendarLink}" target="_blank" style="display: inline-block; padding: 14px 32px; background-color: #4285f4; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 600; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">
+          📅 Adicionar ao Google Agenda
+        </a>
+        <p style="margin: 12px 0 0; color: #6b7280; font-size: 13px;">
+          Clique para salvar este evento no seu Google Agenda
+        </p>
+      </div>
+
+      <div style="margin-top: 24px; padding: 20px; background-color: #dbeafe; border-radius: 12px; border: 1px solid #93c5fd;">
+        <p style="margin: 0; color: #1e40af; font-size: 14px; text-align: center;">
+          📱 No dia e horário do evento, você receberá um link com QR Code para confirmar sua presença na reunião.
+        </p>
+      </div>
+    `;
+
+    const html = this.generateEmailTemplate(
+      'Notificação de Evento',
+      content,
+      statusColor,
+      roomColor,
+    );
+
+    await this.mailerService.sendMail({
+      to: participantEmail,
+      subject: `📋 Notificação de Evento: ${booking.finalidade} - ${getRoomLabel(booking.room_name)}`,
+      html,
+    });
+  }
+
+  // E-mail de REJEIÇÃO estilizado para o solicitante
+  async sendRejectionEmailStyled(booking: Booking) {
+    const statusColor = STATUS_COLORS.rejected;
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+    const formattedDates = booking.dates.map(formatDate).join(', ');
+
+    const content = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
+          Olá, ${booking.nome_completo} 😔
+        </h2>
+        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+          Infelizmente, sua solicitação de agendamento foi <strong style="color: ${statusColor.text};">REJEITADA</strong>.
+        </p>
+      </div>
+
+      ${booking.rejection_reason ? `
+      <div style="margin-bottom: 24px; padding: 16px; background-color: #fee2e2; border-radius: 12px; border-left: 4px solid #ef4444;">
+        <p style="margin: 0 0 8px; color: #991b1b; font-size: 13px; font-weight: 600;">📝 Motivo da Rejeição:</p>
+        <p style="margin: 0; color: #991b1b; font-size: 14px;">${booking.rejection_reason}</p>
+      </div>
+      ` : ''}
+
+      ${this.generateBookingInfoSection(booking, false)}
+
+      <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 12px;">
+        <p style="margin: 0; color: #4b5563; font-size: 14px; text-align: center;">
+          Caso tenha dúvidas, entre em contato com a administração.
+          <br>Você pode fazer uma nova solicitação a qualquer momento.
+        </p>
+      </div>
+    `;
+
+    const html = this.generateEmailTemplate(
+      'Agendamento Rejeitado',
+      content,
+      statusColor,
+      roomColor,
+    );
+
+    await this.mailerService.sendMail({
+      to: booking.email,
+      subject: `❌ Agendamento Rejeitado - ${getRoomLabel(booking.room_name)}`,
+      html,
+    });
+  }
+
+  // E-mail de EM ANÁLISE estilizado para o solicitante
+  async sendUnderAnalysisEmailStyled(booking: Booking) {
+    const statusColor = STATUS_COLORS.em_analise;
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+
+    const content = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
+          Olá, ${booking.nome_completo}! 👋
+        </h2>
+        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+          Seu agendamento na <strong style="color: ${roomColor};">${getRoomLabel(booking.room_name)}</strong> teve uma atualização de status para <strong style="color: ${statusColor.text};">EM ANÁLISE</strong>.
+        </p>
+        <p style="margin: 8px 0 0; color: #6b7280; font-size: 14px;">
+          Assim que houver uma nova mudança de status, você receberá um e-mail informando.
+        </p>
+      </div>
+
+      ${booking.observacao_admin ? `
+      <div style="margin-bottom: 24px; padding: 16px; background-color: #dbeafe; border-radius: 12px; border-left: 4px solid #3b82f6;">
+        <p style="margin: 0 0 8px; color: #1e40af; font-size: 13px; font-weight: 600;">💬 Observação da Administração:</p>
+        <p style="margin: 0; color: #1e40af; font-size: 14px;">${booking.observacao_admin}</p>
+      </div>
+      ` : ''}
+
+      ${this.generateBookingInfoSection(booking, false)}
+
+      <div style="margin-top: 24px; padding: 16px; background-color: #dbeafe; border-radius: 12px; border: 1px solid #93c5fd;">
+        <p style="margin: 0; color: #1e40af; font-size: 14px; text-align: center;">
+          ⏳ Aguarde enquanto nossa equipe analisa sua solicitação.
+        </p>
+      </div>
+    `;
+
+    const html = this.generateEmailTemplate(
+      'Em Análise',
+      content,
+      statusColor,
+      roomColor,
+    );
+
+    await this.mailerService.sendMail({
+      to: booking.email,
+      subject: `🔍 Agendamento Em Análise - ${getRoomLabel(booking.room_name)}`,
+      html,
+    });
+  }
+
+  // E-mail de PENDENTE estilizado (quando volta para pendente)
+  async sendPendingEmailStyled(booking: Booking) {
+    const statusColor = STATUS_COLORS.pending;
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+
+    const content = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
+          Olá, ${booking.nome_completo}! 👋
+        </h2>
+        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+          Seu agendamento na <strong style="color: ${roomColor};">${getRoomLabel(booking.room_name)}</strong> teve uma atualização de status para <strong style="color: ${statusColor.text};">PENDENTE</strong>.
+        </p>
+        <p style="margin: 8px 0 0; color: #6b7280; font-size: 14px;">
+          Assim que houver uma nova mudança de status, você receberá um e-mail informando.
+        </p>
+      </div>
+
+      ${booking.observacao_admin ? `
+      <div style="margin-bottom: 24px; padding: 16px; background-color: #fef3c7; border-radius: 12px; border-left: 4px solid #f59e0b;">
+        <p style="margin: 0 0 8px; color: #92400e; font-size: 13px; font-weight: 600;">💬 Observação da Administração:</p>
+        <p style="margin: 0; color: #92400e; font-size: 14px;">${booking.observacao_admin}</p>
+      </div>
+      ` : ''}
+
+      ${this.generateBookingInfoSection(booking, false)}
+
+      <div style="margin-top: 24px; padding: 16px; background-color: #fef3c7; border-radius: 12px; border: 1px solid #fcd34d;">
+        <p style="margin: 0; color: #92400e; font-size: 14px; text-align: center;">
+          ⏳ Sua solicitação está aguardando análise da administração.
+        </p>
+      </div>
+    `;
+
+    const html = this.generateEmailTemplate(
+      'Pendente',
+      content,
+      statusColor,
+      roomColor,
+    );
+
+    await this.mailerService.sendMail({
+      to: booking.email,
+      subject: `⏳ Agendamento Pendente - ${getRoomLabel(booking.room_name)}`,
+      html,
+    });
+  }
+
+  // Métodos antigos mantidos para compatibilidade (podem ser removidos depois)
+  async sendApprovalEmail(booking: Booking) {
+    // Formata as datas para exibição
+    const formattedDates = booking.dates
+      .map((date) => new Date(`${date}T12:00:00Z`).toLocaleDateString('pt-BR'))
+      .join(', ');
+
+    // Monta seção do local se existir (Escola Fazendária)
+    const localSection = booking.local
+      ? `<p><b>📍 Local do Evento:</b> ${booking.local}</p>`
+      : '';
+
+    await this.mailerService.sendMail({
+      to: booking.email,
+      subject: 'Agendamento Aprovado ✅',
+      html: `
+        <h3>Olá ${booking.nome_completo},</h3>
+        <p>Sua solicitação de agendamento foi <b style="color: green;">APROVADA</b>!</p>
+        
+        <div style="background: #f0fdf4; border-left: 4px solid #22c55e; padding: 16px; margin: 16px 0;">
+          <p><b>🏢 Sala:</b> ${getRoomLabel(booking.room_name)}</p>
+          <p><b>📅 Data(s):</b> ${formattedDates}</p>
+          <p><b>🕐 Horário:</b> ${booking.hora_inicio} às ${booking.hora_fim}</p>
+          <p><b>📝 Finalidade:</b> ${booking.finalidade}</p>
+          ${localSection}
+        </div>
+        
+        <p>Os participantes receberão um link para confirmação de presença.</p>
+        <p>Qualquer dúvida, entre em contato conosco.</p>
+      `,
     });
   }
 
@@ -81,7 +894,7 @@ export class MailService {
     });
   }
 
-  // E-mail: Status mudou para "Em Análise"
+  // E-mail: Status mudou para "Em Análise" (antigo - mantido para compatibilidade)
   async sendUnderAnalysisEmail(booking: Booking, observacao: string) {
     // Formata a data (ou datas) para o e-mail
     const dateStr = Array.isArray(booking.dates)
@@ -100,6 +913,123 @@ export class MailService {
         </blockquote>
         <p>Você será notificado assim que houver uma nova atualização.</p>
       `,
+    });
+  }
+
+  // E-mail de CONFIRMAÇÃO DE PRESENÇA com QR Code - enviado no dia/horário do evento
+  async sendAttendanceConfirmationQRCode(booking: Booking, email: string, frontendUrl: string, isRequester: boolean = false) {
+    const statusColor = STATUS_COLORS.approved;
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+    
+    // Define o local baseado na sala
+    let location: string;
+    if (booking.room_name === 'escola_fazendaria') {
+      location = booking.local || 'Escola Fazendária - SEGET';
+    } else {
+      location = 'Rua Álvares de Castro, 272 - Maricá/RJ';
+    }
+
+    const formattedDates = booking.dates.map(formatDate).join(', ');
+    const confirmationUrl = `${frontendUrl}/confirmar/${booking.id}`;
+
+    // Gera URL para QR Code usando API pública
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(confirmationUrl)}`;
+
+    const greeting = isRequester 
+      ? `Olá, ${booking.nome_completo}! 👋`
+      : `Olá! 👋`;
+
+    const introText = isRequester
+      ? `Seu evento na <strong style="color: ${roomColor};">${getRoomLabel(booking.room_name)}</strong> está acontecendo agora! Confirme sua presença.`
+      : `Você é participante de um evento na <strong style="color: ${roomColor};">${getRoomLabel(booking.room_name)}</strong> que está acontecendo agora. Confirme sua presença.`;
+
+    const content = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
+          ${greeting}
+        </h2>
+        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+          ${introText}
+        </p>
+      </div>
+
+      <!-- Detalhes do Agendamento -->
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
+          📋 Detalhes do Agendamento
+        </h2>
+        <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f0fdf4; border-radius: 12px; overflow: hidden; border: 1px solid #d1fae5;">
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5; width: 50%;">
+              <span style="color: #065f46; font-size: 13px;">📅 DATA(S)</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 600;">${formattedDates}</span>
+            </td>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5; width: 50%;">
+              <span style="color: #065f46; font-size: 13px;">🕐 HORÁRIO</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 600;">${booking.hora_inicio} às ${booking.hora_fim}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">🏢 SALA</span><br>
+              <span style="color: ${roomColor}; font-size: 15px; font-weight: 600;">${getRoomLabel(booking.room_name)}</span>
+            </td>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">📍 LOCAL</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${location}</span>
+            </td>
+          </tr>
+          <tr>
+            <td colspan="2" style="padding: 12px 16px;">
+              <span style="color: #065f46; font-size: 13px;">✅ STATUS</span><br>
+              <span style="display: inline-block; padding: 4px 12px; background-color: #d1fae5; color: #065f46; border-radius: 20px; font-size: 14px; font-weight: 600;">Aprovado</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Seção Confirmação de Presença -->
+      <div style="background-color: #dbeafe; border-radius: 16px; padding: 24px; margin-bottom: 24px; border: 1px solid #93c5fd;">
+        <div style="text-align: center; margin-bottom: 16px;">
+          <span style="display: inline-flex; align-items: center; gap: 8px; color: #1e40af; font-size: 18px; font-weight: 600;">
+            ✓ Confirmação de Presença
+          </span>
+        </div>
+
+        <!-- QR Code -->
+        <div style="text-align: center; margin: 20px 0;">
+          <div style="display: inline-block; background-color: #ffffff; padding: 16px; border-radius: 12px; border: 4px solid #3b82f6;">
+            <img src="${qrCodeUrl}" alt="QR Code para confirmação" style="display: block; width: 200px; height: 200px;" />
+          </div>
+        </div>
+
+        <!-- Instrução -->
+        <div style="background-color: #ffffff; border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 16px;">
+          <p style="margin: 0; color: #6b7280; font-size: 14px;">
+            📱 Escaneie o QR Code com a câmera do seu celular
+          </p>
+        </div>
+
+        <!-- Botão -->
+        <div style="text-align: center;">
+          <a href="${confirmationUrl}" target="_blank" style="display: inline-block; width: 100%; max-width: 300px; padding: 14px 24px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 600; text-align: center; box-sizing: border-box;">
+            🔗 ABRIR LINK DE CONFIRMAÇÃO
+          </a>
+        </div>
+      </div>
+    `;
+
+    const html = this.generateEmailTemplate(
+      'Confirmação de Presença',
+      content,
+      statusColor,
+      roomColor,
+    );
+
+    await this.mailerService.sendMail({
+      to: email,
+      subject: `✓ Confirme sua Presença: ${booking.finalidade} - ${getRoomLabel(booking.room_name)}`,
+      html,
     });
   }
 }
