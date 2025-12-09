@@ -10,8 +10,24 @@ import {
   Matches,
   ArrayMinSize,
   IsDateString,
+  ValidateNested,
+  ArrayMaxSize,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+
+export class ExternalParticipantDto {
+  @IsString()
+  @IsNotEmpty()
+  fullName: string;
+
+  @IsEmail()
+  @IsNotEmpty()
+  email: string;
+
+  @IsString()
+  @IsOptional()
+  matricula?: string;
+}
 
 export class CreateBookingDto {
   @IsString()
@@ -54,25 +70,28 @@ export class CreateBookingDto {
   @ArrayMinSize(1)
   dates: string[];
 
-  @IsString()
-  @IsNotEmpty()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMinSize(1)
   @Transform(({ value }) => value, { toClassOnly: true })
-  horaInicio: string;
+  horaInicio: string[];
 
-  @IsString()
-  @IsNotEmpty()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMinSize(1)
   @Transform(({ value }) => value, { toClassOnly: true })
-  horaFim: string;
-
-  @IsNumber()
-  @IsNotEmpty()
-  @Transform(({ value }) => typeof value === 'string' ? parseInt(value, 10) : value)
-  numeroParticipantes: number;
+  horaFim: string[];
 
   @IsArray()
   @IsEmail({}, { each: true })
   @IsNotEmpty()
   participantes: string[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ExternalParticipantDto)
+  @IsOptional()
+  externalParticipants?: ExternalParticipantDto[];
 
   @IsString()
   @IsNotEmpty()

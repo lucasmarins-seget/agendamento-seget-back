@@ -11,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { MailModule } from './mail/mail.module';
 import { MailService } from './mail/mail.service';
 import { EmployeesModule } from './employees/employees.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 
 @Module({
   imports: [
@@ -44,9 +45,10 @@ import { EmployeesModule } from './employees/employees.module';
     AttendanceModule,
     SettingsModule,
     MailModule,
-    EmployeesModule
+    EmployeesModule,
+    SchedulerModule,
   ],
   controllers: [AppController],
   providers: [AppService, MailService],
 })
-export class AppModule { }
+export class AppModule {}

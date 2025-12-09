@@ -5,7 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors();
-  
+
   // Adiciona headers para evitar cache
   app.use((req, res, next) => {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -13,14 +13,14 @@ async function bootstrap() {
     res.setHeader('Expires', '0');
     next();
   });
-  
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
-      transform: true,  // Habilita transformação automática
+      transform: true, // Habilita transformação automática
       transformOptions: {
-        enableImplicitConversion: true,  // Converte tipos automaticamente
+        enableImplicitConversion: true, // Converte tipos automaticamente
       },
     }),
   );

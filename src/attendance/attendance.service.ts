@@ -28,10 +28,10 @@ export class AttendanceService {
     const { email, bookingId } = verifyEmailDto;
     const verifyingEmail = email.toLowerCase();
 
-    // 1. Busca o agendamento
-    const booking = await this.bookingRepository.findOneBy({
-      id: bookingId,
-      status: 'approved',
+    // 1. Busca o agendamento com participantes externos
+    const booking = await this.bookingRepository.findOne({
+      where: { id: bookingId, status: 'approved' },
+      relations: ['external_participants'],
     });
 
     if (!booking) {
@@ -40,7 +40,34 @@ export class AttendanceService {
       );
     }
 
-    // Verifica se o email existe na tabela de employees
+    // 2. Busca emails dos participantes SEGET (employees)
+    const participantIds = booking.participantes || [];
+    const employeeEmails: string[] = [];
+
+    if (participantIds.length > 0) {
+      const employees = await this.employeeRepository
+        .createQueryBuilder('employee')
+        .where('employee.id IN (:...ids)', { ids: participantIds })
+        .getMany();
+
+      employeeEmails.push(...employees.map((e) => e.email.toLowerCase()));
+    }
+
+    // 3. Busca emails dos participantes externos
+    const externalEmails =
+      booking.external_participants?.map((p) => p.email.toLowerCase()) || [];
+
+    // 4. Combina todos os emails permitidos
+    const allowedEmails = [...employeeEmails, ...externalEmails];
+
+    // 5. Valida se o email está na lista de permitidos
+    if (!allowedEmails.includes(verifyingEmail)) {
+      throw new BadRequestException(
+        'E-mail não cadastrado na base de participantes deste agendamento. Por favor, dirija-se ao RH para atualizar seu e-mail.',
+      );
+    }
+
+    // 6. Verifica se o email existe na tabela de employees
     const employee = await this.employeeRepository.findOneBy({
       email: verifyingEmail,
     });
@@ -56,8 +83,22 @@ export class AttendanceService {
       };
     }
 
-    // Se o email não estiver na tabela de employees, é um visitante
-    // Retorna exists: false para indicar que é necessário pedir nome completo
+    // 7. Se não é employee, busca nos participantes externos
+    const externalParticipant = booking.external_participants?.find(
+      (p) => p.email.toLowerCase() === verifyingEmail,
+    );
+
+    if (externalParticipant) {
+      return {
+        exists: true,
+        userData: {
+          name: externalParticipant.full_name,
+          isEmployee: false,
+        },
+      };
+    }
+
+    // Fallback (não deveria chegar aqui pois já validamos acima)
     return {
       exists: false,
       userData: {
@@ -70,13 +111,37 @@ export class AttendanceService {
   async confirmAttendance(confirmDto: ConfirmAttendanceDto) {
     const { bookingId, email, fullName, status } = confirmDto;
 
-    const booking = await this.bookingRepository.findOneBy({
-      id: bookingId,
-      status: 'approved',
+    const booking = await this.bookingRepository.findOne({
+      where: { id: bookingId, status: 'approved' },
+      relations: ['external_participants'],
     });
     if (!booking) {
       throw new NotFoundException(
         'Agendamento não encontrado ou não aprovado.',
+      );
+    }
+
+    // Validação: o email deve estar na lista de participantes SEGET ou externos
+    const verifyingEmail = email.toLowerCase();
+    const participantIds = booking.participantes || [];
+    const employeeEmails: string[] = [];
+
+    if (participantIds.length > 0) {
+      const employees = await this.employeeRepository
+        .createQueryBuilder('employee')
+        .where('employee.id IN (:...ids)', { ids: participantIds })
+        .getMany();
+
+      employeeEmails.push(...employees.map((e) => e.email.toLowerCase()));
+    }
+
+    const externalEmails =
+      booking.external_participants?.map((p) => p.email.toLowerCase()) || [];
+    const allowedEmails = [...employeeEmails, ...externalEmails];
+
+    if (!allowedEmails.includes(verifyingEmail)) {
+      throw new BadRequestException(
+        'E-mail não cadastrado na base de participantes deste agendamento.',
       );
     }
 
@@ -94,9 +159,10 @@ export class AttendanceService {
       const [startYear, startMonth, startDay] = firstDateStr
         .split('-')
         .map(Number);
-      const [startHour, startMinute] = booking.hora_inicio
-        .split(':')
-        .map(Number);
+      const horaInicioStr = Array.isArray(booking.hora_inicio)
+        ? booking.hora_inicio[0]
+        : booking.hora_inicio;
+      const [startHour, startMinute] = horaInicioStr.split(':').map(Number);
       const bookingStart = new Date(
         startYear,
         startMonth - 1,
@@ -107,7 +173,10 @@ export class AttendanceService {
 
       // Monta o horário de fim (última data + hora_fim)
       const [endYear, endMonth, endDay] = lastDateStr.split('-').map(Number);
-      const [endHour, endMinute] = booking.hora_fim.split(':').map(Number);
+      const horaFimStr = Array.isArray(booking.hora_fim)
+        ? booking.hora_fim[booking.hora_fim.length - 1]
+        : booking.hora_fim;
+      const [endHour, endMinute] = horaFimStr.split(':').map(Number);
       const bookingEnd = new Date(
         endYear,
         endMonth - 1,

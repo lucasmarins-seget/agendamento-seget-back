@@ -11,6 +11,7 @@ import { Booking } from 'src/entities/booking.entity';
 import { AttendanceRecord } from 'src/entities/attendance-record.entity';
 import { AdminUser } from 'src/entities/admin-user.entity';
 import { Employee } from 'src/entities/employee.entity';
+import { ExternalParticipant } from 'src/entities/external-participant.entity';
 import { FindOptionsWhere, In, Like, Repository } from 'typeorm';
 import { RejectBookingDto } from './dto/reject-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
@@ -54,10 +55,13 @@ export class AdminService {
     private readonly adminUserRepository: Repository<AdminUser>,
     @InjectRepository(Employee)
     private readonly employeeRepository: Repository<Employee>,
+    @InjectRepository(ExternalParticipant)
+    private readonly externalParticipantRepository: Repository<ExternalParticipant>,
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
   ) {
-    this.frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+    this.frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
   }
 
   // Helper para buscar nomes dos participantes a partir dos e-mails
@@ -165,7 +169,10 @@ export class AdminService {
 
   // GET /api/admin/bookings/:id/details
   async findOne(id: string, user: AdminUserPayload) {
-    const booking = await this.bookingRepository.findOneBy({ id });
+    const booking = await this.bookingRepository.findOne({
+      where: { id },
+      relations: ['external_participants'],
+    });
     if (!booking) {
       throw new NotFoundException('Agendamento não encontrado');
     }
@@ -190,7 +197,6 @@ export class AdminService {
       dates: booking.dates,
       hora_inicio: booking.hora_inicio,
       hora_fim: booking.hora_fim,
-      numero_participantes: booking.numero_participantes,
       participantes: participantesComNomes, // Agora retorna array de { email, name }
       finalidade: booking.finalidade,
       descricao: booking.descricao,
@@ -214,12 +220,16 @@ export class AdminService {
       rejected_by: booking.rejected_by,
       rejected_at: booking.rejected_at,
       rejection_reason: booking.rejection_reason,
+      external_participants: booking.external_participants || [],
     };
   }
 
   // PATCH /api/admin/bookings/:id/approve
   async approve(id: string, user: AdminUserPayload, local?: string) {
-    const booking = await this.bookingRepository.findOneBy({ id });
+    const booking = await this.bookingRepository.findOne({
+      where: { id },
+      relations: ['external_participants'],
+    });
     if (!booking) {
       throw new NotFoundException('Agendamento não encontrado');
     }
@@ -244,13 +254,26 @@ export class AdminService {
     // Envia e-mail estilizado de aprovação para o solicitante
     await this.mailService.sendApprovalEmailToRequester(savedBooking);
 
-    // Envia e-mail estilizado para todos os participantes com link do Google Calendar
+    // Envia e-mail estilizado para todos os participantes SEGET com link do Google Calendar
     for (const email of savedBooking.participantes) {
       await this.mailService.sendApprovalEmailToParticipant(
         savedBooking,
         email,
         this.frontendUrl,
       );
+    }
+
+    // Envia e-mail para participantes externos com QR code
+    if (
+      savedBooking.external_participants &&
+      savedBooking.external_participants.length > 0
+    ) {
+      for (const participant of savedBooking.external_participants) {
+        await this.mailService.sendExternalParticipantNotification(
+          savedBooking,
+          participant,
+        );
+      }
     }
 
     return {
@@ -271,7 +294,10 @@ export class AdminService {
     analyzeBookingDto: AnalyzeBookingDto,
     user: AdminUserPayload,
   ) {
-    const booking = await this.bookingRepository.findOneBy({ id });
+    const booking = await this.bookingRepository.findOne({
+      where: { id },
+      relations: ['external_participants'],
+    });
     if (!booking) {
       throw new NotFoundException('Agendamento não encontrado');
     }
@@ -314,7 +340,10 @@ export class AdminService {
     approvePartialDto: ApprovePartialBookingDto,
     user: AdminUserPayload,
   ) {
-    const booking = await this.bookingRepository.findOneBy({ id });
+    const booking = await this.bookingRepository.findOne({
+      where: { id },
+      relations: ['external_participants'],
+    });
     if (!booking) {
       throw new NotFoundException('Agendamento não encontrado');
     }
@@ -344,7 +373,11 @@ export class AdminService {
 
     // Se tentar aprovar vazio, é rejeição total
     if (datesToApprove.length === 0) {
-      return this.reject(id, { reason: rejectionReason }, user);
+      return this.reject(
+        id,
+        { reason: rejectionReason } as RejectBookingDto,
+        user,
+      );
     }
 
     // 2. Atualizar a Entidade Original (Aprovada)
@@ -388,13 +421,26 @@ export class AdminService {
     // 4. Disparar E-mails Estilizados
     // Aprovado - para solicitante:
     await this.mailService.sendApprovalEmailToRequester(savedApprovedBooking);
-    // Aprovado - para participantes:
+    // Aprovado - para participantes SEGET:
     for (const email of savedApprovedBooking.participantes) {
       await this.mailService.sendApprovalEmailToParticipant(
         savedApprovedBooking,
         email,
         this.frontendUrl,
       );
+    }
+
+    // Aprovado - para participantes externos:
+    if (
+      savedApprovedBooking.external_participants &&
+      savedApprovedBooking.external_participants.length > 0
+    ) {
+      for (const participant of savedApprovedBooking.external_participants) {
+        await this.mailService.sendExternalParticipantNotification(
+          savedApprovedBooking,
+          participant,
+        );
+      }
     }
 
     // Rejeitado - para solicitante:
@@ -422,7 +468,10 @@ export class AdminService {
     rejectBookingDto: RejectBookingDto,
     user: AdminUserPayload,
   ) {
-    const booking = await this.bookingRepository.findOneBy({ id });
+    const booking = await this.bookingRepository.findOne({
+      where: { id },
+      relations: ['external_participants'],
+    });
     if (!booking) {
       throw new NotFoundException('Agendamento não encontrado');
     }
@@ -461,17 +510,23 @@ export class AdminService {
     updateBookingDto: UpdateBookingDto,
     user: AdminUserPayload,
   ) {
-    const booking = await this.bookingRepository.findOneBy({ id });
+    console.log('=== UPDATE BOOKING ===');
+    console.log('ID:', id);
+    console.log('DTO recebido:', JSON.stringify(updateBookingDto, null, 2));
+
+    const booking = await this.bookingRepository.findOne({
+      where: { id },
+      relations: ['external_participants'],
+    });
     if (!booking) {
       throw new NotFoundException('Agendamento não encontrado');
     }
     this.checkPermission(booking, user);
 
     // Mapeamento explícito de DTO (camelCase) para Entity (snake_case)
-    // Isso é necessário porque o Object.assign direto não lida com a diferença de nomes
     if (updateBookingDto.room_name)
       booking.room_name = updateBookingDto.room_name;
-    if (updateBookingDto.tipoReserva)
+    if (updateBookingDto.tipoReserva !== undefined)
       booking.tipo_reserva = updateBookingDto.tipoReserva;
     if (updateBookingDto.nomeCompleto)
       booking.nome_completo = updateBookingDto.nomeCompleto;
@@ -480,8 +535,6 @@ export class AdminService {
     if (updateBookingDto.horaInicio)
       booking.hora_inicio = updateBookingDto.horaInicio;
     if (updateBookingDto.horaFim) booking.hora_fim = updateBookingDto.horaFim;
-    if (updateBookingDto.numeroParticipantes)
-      booking.numero_participantes = updateBookingDto.numeroParticipantes;
 
     // Campos que já coincidem ou são simples
     if (updateBookingDto.dates) booking.dates = updateBookingDto.dates;
@@ -499,33 +552,79 @@ export class AdminService {
       booking.observacao = updateBookingDto.observacao;
 
     // Equipamentos e Específicos (mapeamento)
-    if (updateBookingDto.projetor) booking.projetor = updateBookingDto.projetor;
-    if (updateBookingDto.somProjetor)
+    if (updateBookingDto.projetor !== undefined)
+      booking.projetor = updateBookingDto.projetor;
+    if (updateBookingDto.somProjetor !== undefined)
       booking.som_projetor = updateBookingDto.somProjetor;
-    if (updateBookingDto.internet) booking.internet = updateBookingDto.internet;
-    if (updateBookingDto.wifiTodos)
+    if (updateBookingDto.internet !== undefined)
+      booking.internet = updateBookingDto.internet;
+    if (updateBookingDto.wifiTodos !== undefined)
       booking.wifi_todos = updateBookingDto.wifiTodos;
-    if (updateBookingDto.conexaoCabo)
+    if (updateBookingDto.conexaoCabo !== undefined)
       booking.conexao_cabo = updateBookingDto.conexaoCabo;
-    if (updateBookingDto.softwareEspecifico)
+    if (updateBookingDto.softwareEspecifico !== undefined)
       booking.software_especifico = updateBookingDto.softwareEspecifico;
-    if (updateBookingDto.qualSoftware)
+    if (updateBookingDto.qualSoftware !== undefined)
       booking.qual_software = updateBookingDto.qualSoftware;
-    if (updateBookingDto.papelaria)
+    if (updateBookingDto.papelaria !== undefined)
       booking.papelaria = updateBookingDto.papelaria;
-    if (updateBookingDto.materialExterno)
+    if (updateBookingDto.materialExterno !== undefined)
       booking.material_externo = updateBookingDto.materialExterno;
-    if (updateBookingDto.apoioEquipe)
+    if (updateBookingDto.apoioEquipe !== undefined)
       booking.apoio_equipe = updateBookingDto.apoioEquipe;
 
+    // Salva primeiro o booking principal
     const updatedBooking = await this.bookingRepository.save(booking);
+    console.log('Booking principal salvo:', updatedBooking.id);
 
-    // Opcional: await this.mailService.sendUpdateEmail(updatedBooking);
+    // Atualiza Participantes Externos separadamente
+    if (updateBookingDto.externalParticipants !== undefined) {
+      console.log(
+        'Atualizando participantes externos:',
+        updateBookingDto.externalParticipants,
+      );
+
+      try {
+        // Remove participantes externos antigos usando query builder para evitar problemas
+        await this.externalParticipantRepository
+          .createQueryBuilder()
+          .delete()
+          .where('booking_id = :bookingId', { bookingId: booking.id })
+          .execute();
+        console.log('Participantes antigos removidos');
+
+        // Adiciona novos participantes externos
+        if (updateBookingDto.externalParticipants.length > 0) {
+          for (const p of updateBookingDto.externalParticipants) {
+            if (p.fullName && p.email) {
+              const newParticipant = this.externalParticipantRepository.create({
+                booking_id: booking.id,
+                full_name: p.fullName,
+                email: p.email,
+                matricula: p.matricula || null,
+              });
+              await this.externalParticipantRepository.save(newParticipant);
+              console.log('Participante salvo:', p.fullName);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao atualizar participantes externos:', error);
+      }
+    }
+
+    // Recarrega o booking com os participantes externos atualizados
+    const bookingWithRelations = await this.bookingRepository.findOne({
+      where: { id: updatedBooking.id },
+      relations: ['external_participants'],
+    });
+
+    console.log('=== UPDATE COMPLETO ===');
 
     return {
       success: true,
       message: 'Agendamento atualizado com sucesso',
-      booking: updatedBooking,
+      booking: bookingWithRelations,
     };
   }
 
@@ -533,7 +632,7 @@ export class AdminService {
   async getAttendance(id: string, user: AdminUserPayload) {
     const booking = await this.bookingRepository.findOne({
       where: { id },
-      relations: ['attendance_records'],
+      relations: ['attendance_records', 'external_participants'],
     });
 
     if (!booking) {
@@ -553,10 +652,14 @@ export class AdminService {
     let bookingEndTime = now;
     if (lastDateStr) {
       const [year, month, day] = lastDateStr.split('-').map(Number);
-      const [hour, minute] = booking.hora_fim.split(':').map(Number);
+      const horaFimStr = Array.isArray(booking.hora_fim)
+        ? booking.hora_fim[booking.hora_fim.length - 1]
+        : booking.hora_fim;
+      const [hour, minute] = horaFimStr.split(':').map(Number);
       bookingEndTime = new Date(year, month - 1, day, hour, minute);
     }
 
+    // Monta a lista de presença a partir dos registros confirmados
     const attendance: AttendanceResponse[] = (
       booking.attendance_records || []
     ).map((record) => ({
@@ -575,17 +678,18 @@ export class AdminService {
 
     const respondedEmails = attendance.map((a) => a.email);
 
-    // Busca nomes dos participantes que ainda não confirmaram
-    const pendingEmails = (booking.participantes || []).filter(
+    // Busca nomes dos participantes SEGET que ainda não confirmaram
+    const pendingSegetEmails = (booking.participantes || []).filter(
       (email) => !respondedEmails.includes(email.toLowerCase()),
     );
     const participantsWithNames =
-      await this.getParticipantsWithNames(pendingEmails);
+      await this.getParticipantsWithNames(pendingSegetEmails);
     const emailToName = new Map(
       participantsWithNames.map((p) => [p.email.toLowerCase(), p.name]),
     );
 
-    for (const email of pendingEmails) {
+    // Adiciona participantes SEGET pendentes (não confirmaram)
+    for (const email of pendingSegetEmails) {
       // Se já passou do horário de término do agendamento, marca como "Não Confirmado"
       // Caso contrário, está "Pendente" (ainda pode confirmar)
       let status = 'Pendente';
@@ -601,9 +705,31 @@ export class AdminService {
         email: email,
         confirmedAt: null,
         confirmedTime: null,
-        isVisitor: null,
+        isVisitor: false, // Participante SEGET não é visitante
         status: status,
       });
+    }
+
+    // Adiciona participantes externos pendentes (não confirmaram)
+    const externalParticipants = booking.external_participants || [];
+    for (const external of externalParticipants) {
+      // Verifica se o externo já confirmou
+      if (!respondedEmails.includes(external.email.toLowerCase())) {
+        let status = 'Pendente';
+        if (now > bookingEndTime) {
+          status = 'Não Confirmado';
+        }
+
+        attendance.push({
+          id: null,
+          fullName: external.full_name,
+          email: external.email,
+          confirmedAt: null,
+          confirmedTime: null,
+          isVisitor: true, // Participante externo é visitante
+          status: status,
+        });
+      }
     }
 
     return {
@@ -771,277 +897,319 @@ export class AdminService {
 
   async getStatistics(
     user: AdminUserPayload,
-    filters: { room?: string; startDate?: string; endDate?: string; page?: number; limit?: number },
+    filters: {
+      room?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: number;
+      limit?: number;
+    },
   ) {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+    try {
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
 
-    // Calcula início e fim da semana (segunda a sexta)
-    const dayOfWeek = today.getDay();
-    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + diffToMonday);
-    const mondayStr = monday.toISOString().split('T')[0];
+      // Calcula início e fim da semana (segunda a sexta)
+      const dayOfWeek = today.getDay();
+      const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + diffToMonday);
+      const mondayStr = monday.toISOString().split('T')[0];
 
-    const friday = new Date(monday);
-    friday.setDate(monday.getDate() + 4);
-    const fridayStr = friday.toISOString().split('T')[0];
+      const friday = new Date(monday);
+      friday.setDate(monday.getDate() + 4);
+      const fridayStr = friday.toISOString().split('T')[0];
 
-    // Define o filtro de sala baseado no usuário e filtros
-    let roomFilter: string | null = null;
-    if (!user.isSuperAdmin) {
-      // Admin de sala só vê dados da sua sala
-      roomFilter = user.roomAccess;
-    } else if (filters.room && filters.room !== 'all') {
-      // Super admin pode filtrar por sala específica
-      roomFilter = filters.room;
-    }
+      // Define o filtro de sala baseado no usuário e filtros
+      let roomFilter: string | null = null;
+      if (!user.isSuperAdmin) {
+        // Admin de sala só vê dados da sua sala
+        roomFilter = user.roomAccess;
+      } else if (filters.room && filters.room !== 'all') {
+        // Super admin pode filtrar por sala específica
+        roomFilter = filters.room;
+      }
 
-    // Query base - usando getRepository para garantir dados frescos
-    const queryBuilder = this.bookingRepository
-      .createQueryBuilder('booking')
-      .select();
+      // Query base - usando getRepository para garantir dados frescos
+      const queryBuilder = this.bookingRepository
+        .createQueryBuilder('booking')
+        .select();
 
-    // Aplica filtro de sala se necessário
-    if (roomFilter) {
-      queryBuilder.andWhere('booking.room_name = :room', { room: roomFilter });
-    }
-
-    // Para MySQL, não usamos unnest. Vamos buscar todos e filtrar em memória
-    // já que o campo dates é um simple-array (string separada por vírgula)
-
-    // Busca todos os bookings com os filtros aplicados
-    const allBookingsRaw = await queryBuilder.getMany();
-
-    // Para o SUMMARY (contagem de status), usamos TODOS os bookings sem filtro de período
-    // Isso garante que pendentes, aprovados, etc. sempre reflitam o estado atual
-    const allBookingsForSummary = allBookingsRaw;
-
-    // Para gráficos históricos (monthlyStats, weekdayStats), filtramos por período
-    let allBookingsForCharts = allBookingsRaw;
-    if (filters.startDate && filters.endDate) {
-      const startDate = filters.startDate;
-      const endDate = filters.endDate;
-      allBookingsForCharts = allBookingsRaw.filter((booking) => {
-        if (!booking.dates || booking.dates.length === 0) return false;
-        // Verifica se alguma data do booking está no período
-        return booking.dates.some((dateStr) => {
-          return dateStr >= startDate && dateStr <= endDate;
+      // Aplica filtro de sala se necessário
+      if (roomFilter) {
+        queryBuilder.andWhere('booking.room_name = :room', {
+          room: roomFilter,
         });
-      });
-    }
+      }
 
-    // ===== ESTATÍSTICAS GERAIS (usa todos os bookings, sem filtro de período) =====
+      // Para MySQL, não usamos unnest. Vamos buscar todos e filtrar em memória
+      // já que o campo dates é um simple-array (string separada por vírgula)
 
-    // Total de reservas
-    const totalBookings = allBookingsForSummary.length;
+      // Busca todos os bookings com os filtros aplicados
+      const allBookingsRaw = await queryBuilder.getMany();
 
-    // Reservas por status
-    const approvedBookings = allBookingsForSummary.filter((b) => b.status === 'approved');
-    const rejectedBookings = allBookingsForSummary.filter((b) => b.status === 'rejected');
-    const pendingBookings = allBookingsForSummary.filter((b) => b.status === 'pending');
-    const emAnaliseBookings = allBookingsForSummary.filter(
-      (b) => b.status === 'em_analise',
-    );
+      // Para o SUMMARY (contagem de status), usamos TODOS os bookings sem filtro de período
+      // Isso garante que pendentes, aprovados, etc. sempre reflitam o estado atual
+      const allBookingsForSummary = allBookingsRaw;
 
-    // Reservas de hoje (booking com data de hoje)
-    const todayBookings = allBookingsForSummary.filter((b) =>
-      b.dates?.some((d) => d === todayStr),
-    );
+      // Para gráficos históricos (monthlyStats, weekdayStats), filtramos por período
+      let allBookingsForCharts = allBookingsRaw;
+      if (filters.startDate && filters.endDate) {
+        const startDate = filters.startDate;
+        const endDate = filters.endDate;
+        allBookingsForCharts = allBookingsRaw.filter((booking) => {
+          if (!booking.dates || booking.dates.length === 0) return false;
+          // Verifica se alguma data do booking está no período
+          return booking.dates.some((dateStr) => {
+            return dateStr >= startDate && dateStr <= endDate;
+          });
+        });
+      }
 
-    // Reservas da semana (segunda a sexta da semana atual)
-    const weekBookings = allBookingsForSummary.filter((b) =>
-      b.dates?.some((d) => d >= mondayStr && d <= fridayStr),
-    );
+      // ===== ESTATÍSTICAS GERAIS (usa todos os bookings, sem filtro de período) =====
 
-    // Reservas futuras (data >= hoje)
-    const futureBookings = allBookingsForSummary.filter((b) =>
-      b.dates?.some((d) => d >= todayStr),
-    );
+      // Total de reservas
+      const totalBookings = allBookingsForSummary.length;
 
-    // ===== RANKING POR SETOR (Top 7) - usa todos os bookings =====
-    const sectorCount: Record<string, number> = {};
-    for (const booking of allBookingsForSummary) {
-      const sector = booking.setor_solicitante || 'Não informado';
-      sectorCount[sector] = (sectorCount[sector] || 0) + 1;
-    }
+      // Reservas por status
+      const approvedBookings = allBookingsForSummary.filter(
+        (b) => b.status === 'approved',
+      );
+      const rejectedBookings = allBookingsForSummary.filter(
+        (b) => b.status === 'rejected',
+      );
+      const pendingBookings = allBookingsForSummary.filter(
+        (b) => b.status === 'pending',
+      );
+      const emAnaliseBookings = allBookingsForSummary.filter(
+        (b) => b.status === 'em_analise',
+      );
 
-    const topSectors = Object.entries(sectorCount)
-      .map(([sector, count]) => ({ sector, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 7);
+      // Reservas de hoje (booking com data de hoje)
+      const todayBookings = allBookingsForSummary.filter((b) =>
+        b.dates?.some((d) => d === todayStr),
+      );
 
-    // ===== RESERVAS POR MÊS (últimos 6 meses + mês atual + próximo mês) =====
-    // Incluindo meses futuros para capturar reservas agendadas
-    const monthlyData: Record<string, { approved: number; rejected: number; pending: number; emAnalise: number }> =
-      {};
-    const months: string[] = [];
-    
-    // Começa 5 meses atrás e vai até 1 mês à frente
-    for (let i = 5; i >= -1; i--) {
-      const d = new Date();
-      d.setMonth(d.getMonth() - i);
-      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      months.push(monthKey);
-      monthlyData[monthKey] = { approved: 0, rejected: 0, pending: 0, emAnalise: 0 };
-    }
+      // Reservas da semana (segunda a sexta da semana atual)
+      const weekBookings = allBookingsForSummary.filter((b) =>
+        b.dates?.some((d) => d >= mondayStr && d <= fridayStr),
+      );
 
-    // Contabiliza todos os bookings por mês (usando allBookingsForSummary para ter visão completa)
-    for (const booking of allBookingsForSummary) {
-      if (!booking.dates || booking.dates.length === 0) continue;
-      const firstDate = booking.dates[0];
-      const monthKey = firstDate.substring(0, 7); // YYYY-MM
+      // Reservas futuras (data >= hoje)
+      const futureBookings = allBookingsForSummary.filter((b) =>
+        b.dates?.some((d) => d >= todayStr),
+      );
 
-      if (monthlyData[monthKey]) {
-        if (booking.status === 'approved') {
-          monthlyData[monthKey].approved++;
-        } else if (booking.status === 'rejected') {
-          monthlyData[monthKey].rejected++;
-        } else if (booking.status === 'pending') {
-          monthlyData[monthKey].pending++;
-        } else if (booking.status === 'em_analise') {
-          monthlyData[monthKey].emAnalise++;
+      // ===== RANKING POR SETOR (Top 7) - usa todos os bookings =====
+      const sectorCount: Record<string, number> = {};
+      for (const booking of allBookingsForSummary) {
+        const sector = booking.setor_solicitante || 'Não informado';
+        sectorCount[sector] = (sectorCount[sector] || 0) + 1;
+      }
+
+      const topSectors = Object.entries(sectorCount)
+        .map(([sector, count]) => ({ sector, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 7);
+
+      // ===== RESERVAS POR MÊS (últimos 6 meses + mês atual + próximo mês) =====
+      // Incluindo meses futuros para capturar reservas agendadas
+      const monthlyData: Record<
+        string,
+        {
+          approved: number;
+          rejected: number;
+          pending: number;
+          emAnalise: number;
+        }
+      > = {};
+      const months: string[] = [];
+
+      // Começa 5 meses atrás e vai até 1 mês à frente
+      for (let i = 5; i >= -1; i--) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        months.push(monthKey);
+        monthlyData[monthKey] = {
+          approved: 0,
+          rejected: 0,
+          pending: 0,
+          emAnalise: 0,
+        };
+      }
+
+      // Contabiliza todos os bookings por mês (usando allBookingsForSummary para ter visão completa)
+      for (const booking of allBookingsForSummary) {
+        if (!booking.dates || booking.dates.length === 0) continue;
+        const firstDate = booking.dates[0];
+        const monthKey = firstDate.substring(0, 7); // YYYY-MM
+
+        if (monthlyData[monthKey]) {
+          if (booking.status === 'approved') {
+            monthlyData[monthKey].approved++;
+          } else if (booking.status === 'rejected') {
+            monthlyData[monthKey].rejected++;
+          } else if (booking.status === 'pending') {
+            monthlyData[monthKey].pending++;
+          } else if (booking.status === 'em_analise') {
+            monthlyData[monthKey].emAnalise++;
+          }
         }
       }
-    }
 
-    const monthlyStats = months.map((month) => {
-      const [year, m] = month.split('-');
-      const monthNames = [
-        'Jan',
-        'Fev',
-        'Mar',
-        'Abr',
-        'Mai',
-        'Jun',
-        'Jul',
-        'Ago',
-        'Set',
-        'Out',
-        'Nov',
-        'Dez',
-      ];
-      return {
-        month: `${monthNames[parseInt(m) - 1]}/${year.slice(2)}`,
-        aprovadas: monthlyData[month].approved,
-        canceladas: monthlyData[month].rejected,
-        pendentes: monthlyData[month].pending,
-        emAnalise: monthlyData[month].emAnalise,
+      const monthlyStats = months.map((month) => {
+        const [year, m] = month.split('-');
+        const monthNames = [
+          'Jan',
+          'Fev',
+          'Mar',
+          'Abr',
+          'Mai',
+          'Jun',
+          'Jul',
+          'Ago',
+          'Set',
+          'Out',
+          'Nov',
+          'Dez',
+        ];
+        return {
+          month: `${monthNames[parseInt(m) - 1]}/${year.slice(2)}`,
+          aprovadas: monthlyData[month].approved,
+          canceladas: monthlyData[month].rejected,
+          pendentes: monthlyData[month].pending,
+          emAnalise: monthlyData[month].emAnalise,
+        };
+      });
+
+      // ===== RESERVAS POR DIA DA SEMANA (usa todos os bookings) =====
+      const weekdayCount: Record<string, number> = {
+        Segunda: 0,
+        Terça: 0,
+        Quarta: 0,
+        Quinta: 0,
+        Sexta: 0,
       };
-    });
 
-    // ===== RESERVAS POR DIA DA SEMANA (usa todos os bookings) =====
-    const weekdayCount: Record<string, number> = {
-      Segunda: 0,
-      Terça: 0,
-      Quarta: 0,
-      Quinta: 0,
-      Sexta: 0,
-    };
+      const weekdayNames = [
+        'Domingo',
+        'Segunda',
+        'Terça',
+        'Quarta',
+        'Quinta',
+        'Sexta',
+        'Sábado',
+      ];
 
-    const weekdayNames = [
-      'Domingo',
-      'Segunda',
-      'Terça',
-      'Quarta',
-      'Quinta',
-      'Sexta',
-      'Sábado',
-    ];
-
-    for (const booking of allBookingsForSummary) {
-      if (!booking.dates) continue;
-      for (const dateStr of booking.dates) {
-        const date = new Date(dateStr + 'T12:00:00'); // Adiciona horário para evitar problemas de timezone
-        const dayName = weekdayNames[date.getDay()];
-        if (weekdayCount[dayName] !== undefined) {
-          weekdayCount[dayName]++;
+      for (const booking of allBookingsForSummary) {
+        if (!booking.dates) continue;
+        for (const dateStr of booking.dates) {
+          const date = new Date(dateStr + 'T12:00:00'); // Adiciona horário para evitar problemas de timezone
+          const dayName = weekdayNames[date.getDay()];
+          if (weekdayCount[dayName] !== undefined) {
+            weekdayCount[dayName]++;
+          }
         }
       }
-    }
 
-    const weekdayStats = Object.entries(weekdayCount).map(([day, count]) => ({
-      day,
-      count,
-    }));
-
-    // ===== RESERVAS POR SALA (para super admin) - usa todos os bookings =====
-    const roomCount: Record<string, number> = {};
-    for (const booking of allBookingsForSummary) {
-      const room = booking.room_name || 'Não informado';
-      roomCount[room] = (roomCount[room] || 0) + 1;
-    }
-
-    const roomStats = Object.entries(roomCount).map(([room, count]) => ({
-      room,
-      count,
-    }));
-
-    // ===== LISTA DE RESERVAS RECENTES (para tabela detalhada) COM PAGINAÇÃO =====
-    const page = filters.page || 1;
-    const limit = filters.limit || 10;
-    
-    // Ordena por data mais recente primeiro
-    const sortedBookings = allBookingsForSummary
-      .filter((b) => b.dates && b.dates.length > 0)
-      .sort((a, b) => {
-        const dateA = a.dates?.[0] || '';
-        const dateB = b.dates?.[0] || '';
-        // Ordena por data descendente, depois por hora de início descendente
-        if (dateB !== dateA) {
-          return dateB.localeCompare(dateA);
-        }
-        return (b.hora_inicio || '').localeCompare(a.hora_inicio || '');
-      });
-    
-    const totalRecentBookings = sortedBookings.length;
-    const totalPages = Math.ceil(totalRecentBookings / limit);
-    const skip = (page - 1) * limit;
-    
-    const recentBookings = sortedBookings
-      .slice(skip, skip + limit)
-      .map((booking) => ({
-        id: booking.id,
-        responsavel:
-          booking.responsavel || booking.nome_completo || 'Não informado',
-        setor: booking.setor_solicitante || 'Não informado',
-        room: booking.room_name,
-        dates: booking.dates,
-        horaInicio: booking.hora_inicio,
-        horaFim: booking.hora_fim,
-        status: booking.status,
-        finalidade: booking.finalidade || '',
+      const weekdayStats = Object.entries(weekdayCount).map(([day, count]) => ({
+        day,
+        count,
       }));
 
-    return {
-      summary: {
-        today: todayBookings.length,
-        week: weekBookings.length,
-        future: futureBookings.length,
-        total: totalBookings,
-        approved: approvedBookings.length,
-        rejected: rejectedBookings.length,
-        pending: pendingBookings.length,
-        emAnalise: emAnaliseBookings.length,
-      },
-      topSectors,
-      monthlyStats,
-      weekdayStats,
-      roomStats,
-      recentBookings,
-      recentBookingsPagination: {
-        total: totalRecentBookings,
-        page,
-        limit,
-        totalPages,
-      },
-    };
+      // ===== RESERVAS POR SALA (para super admin) - usa todos os bookings =====
+      const roomCount: Record<string, number> = {};
+      for (const booking of allBookingsForSummary) {
+        const room = booking.room_name || 'Não informado';
+        roomCount[room] = (roomCount[room] || 0) + 1;
+      }
+
+      const roomStats = Object.entries(roomCount).map(([room, count]) => ({
+        room,
+        count,
+      }));
+
+      // ===== LISTA DE RESERVAS RECENTES (para tabela detalhada) COM PAGINAÇÃO =====
+      const page = filters.page || 1;
+      const limit = filters.limit || 10;
+
+      // Ordena por data mais recente primeiro
+      const sortedBookings = allBookingsForSummary
+        .filter((b) => b.dates && b.dates.length > 0)
+        .sort((a, b) => {
+          const dateA = a.dates?.[0] ?? '';
+          const dateB = b.dates?.[0] ?? '';
+          // Ordena por data descendente, depois por hora de início descendente
+          if (dateB !== dateA) {
+            return (dateB || '').localeCompare(dateA || '');
+          }
+          const horaInicioA = Array.isArray(a.hora_inicio)
+            ? (a.hora_inicio[0] ?? '')
+            : (a.hora_inicio ?? '');
+          const horaInicioB = Array.isArray(b.hora_inicio)
+            ? (b.hora_inicio[0] ?? '')
+            : (b.hora_inicio ?? '');
+          return (horaInicioB || '').localeCompare(horaInicioA || '');
+        });
+
+      const totalRecentBookings = sortedBookings.length;
+      const totalPages = Math.ceil(totalRecentBookings / limit);
+      const skip = (page - 1) * limit;
+
+      const recentBookings = sortedBookings
+        .slice(skip, skip + limit)
+        .map((booking) => ({
+          id: booking.id,
+          responsavel:
+            booking.responsavel || booking.nome_completo || 'Não informado',
+          setor: booking.setor_solicitante || 'Não informado',
+          room: booking.room_name,
+          dates: booking.dates,
+          horaInicio: booking.hora_inicio,
+          horaFim: booking.hora_fim,
+          status: booking.status,
+          finalidade: booking.finalidade || '',
+        }));
+
+      return {
+        summary: {
+          today: todayBookings.length,
+          week: weekBookings.length,
+          future: futureBookings.length,
+          total: totalBookings,
+          approved: approvedBookings.length,
+          rejected: rejectedBookings.length,
+          pending: pendingBookings.length,
+          emAnalise: emAnaliseBookings.length,
+        },
+        topSectors,
+        monthlyStats,
+        weekdayStats,
+        roomStats,
+        recentBookings,
+        recentBookingsPagination: {
+          total: totalRecentBookings,
+          page,
+          limit,
+          totalPages,
+        },
+      };
+    } catch (error) {
+      console.error('Erro em getStatistics:', error);
+      throw error;
+    }
   }
 
   // GET /api/admin/statistics/bookings - Busca reservas filtradas por tipo
   async getFilteredBookings(
     user: AdminUserPayload,
-    filters: { filterType: string; room?: string; page?: number; limit?: number },
+    filters: {
+      filterType: string;
+      room?: string;
+      page?: number;
+      limit?: number;
+    },
   ) {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
@@ -1131,7 +1299,13 @@ export class AdminService {
         if (dateB !== dateA) {
           return dateB.localeCompare(dateA);
         }
-        return (b.hora_inicio || '').localeCompare(a.hora_inicio || '');
+        const horaInicioA = Array.isArray(a.hora_inicio)
+          ? a.hora_inicio[0]
+          : a.hora_inicio || '';
+        const horaInicioB = Array.isArray(b.hora_inicio)
+          ? b.hora_inicio[0]
+          : b.hora_inicio || '';
+        return horaInicioB.localeCompare(horaInicioA);
       });
 
     // Paginação
@@ -1145,7 +1319,8 @@ export class AdminService {
       .slice(skip, skip + limit)
       .map((booking) => ({
         id: booking.id,
-        responsavel: booking.responsavel || booking.nome_completo || 'Não informado',
+        responsavel:
+          booking.responsavel || booking.nome_completo || 'Não informado',
         setor: booking.setor_solicitante || 'Não informado',
         room: booking.room_name,
         dates: booking.dates,

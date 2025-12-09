@@ -7,6 +7,7 @@ import {
   OneToMany,
 } from 'typeorm';
 import { AttendanceRecord } from './attendance-record.entity';
+import { ExternalParticipant } from './external-participant.entity';
 
 @Entity('bookings')
 export class Booking {
@@ -41,16 +42,13 @@ export class Booking {
   @Column({ type: 'simple-array' })
   dates: string[];
 
-  @Column({ type: 'varchar', length: 10 })
-  hora_inicio: string;
+  @Column({ type: 'simple-array' })
+  hora_inicio: string[];
 
-  @Column({ type: 'varchar', length: 10 })
-  hora_fim: string;
+  @Column({ type: 'simple-array' })
+  hora_fim: string[];
 
   // --- Evento ---
-  @Column({ type: 'int' })
-  numero_participantes: number;
-
   @Column({ type: 'simple-array' })
   participantes: string[];
 
@@ -125,4 +123,10 @@ export class Booking {
 
   @OneToMany(() => AttendanceRecord, (record) => record.booking)
   attendance_records: AttendanceRecord[];
+
+  @OneToMany(() => ExternalParticipant, (participant) => participant.booking, {
+    cascade: true,
+    eager: false,
+  })
+  external_participants: ExternalParticipant[];
 }

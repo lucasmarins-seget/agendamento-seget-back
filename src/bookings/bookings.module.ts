@@ -5,12 +5,19 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Booking } from '../entities/booking.entity';
 import { RoomBlock } from '../entities/room-block.entity';
 import { RoomSetting } from '../entities/room-setting.entity';
+import { ExternalParticipant } from '../entities/external-participant.entity';
 import { MailModule } from 'src/mail/mail.module';
 import { AdminUser } from 'src/entities/admin-user.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Booking, RoomBlock, RoomSetting, AdminUser]),
+    TypeOrmModule.forFeature([
+      Booking,
+      RoomBlock,
+      RoomSetting,
+      AdminUser,
+      ExternalParticipant,
+    ]),
     MailModule,
   ],
   controllers: [BookingsController],
