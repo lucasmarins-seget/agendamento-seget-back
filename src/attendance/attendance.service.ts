@@ -26,7 +26,7 @@ export class AttendanceService {
 
   async verifyEmail(verifyEmailDto: VerifyEmailDto) {
     const { email, bookingId } = verifyEmailDto;
-    const verifyingEmail = email.toLowerCase();
+    const verifyingEmail = email.toLowerCase().trim();
 
     // 1. Busca o agendamento com participantes externos
     const booking = await this.bookingRepository.findOne({
@@ -40,26 +40,47 @@ export class AttendanceService {
       );
     }
 
-    // 2. Participantes SEGET - o campo 'participantes' já contém emails
+    // 2. Email do solicitante do agendamento
+    const solicitanteEmail = booking.email?.toLowerCase().trim();
+
+    // 3. Participantes SEGET - o campo 'participantes' já contém emails
     const participantEmails = (booking.participantes || []).map((e) =>
-      e.toLowerCase(),
+      e.toLowerCase().trim(),
     );
 
-    // 3. Busca emails dos participantes externos
+    // 4. Busca emails dos participantes externos
     const externalEmails =
-      booking.external_participants?.map((p) => p.email.toLowerCase()) || [];
+      booking.external_participants?.map((p) => p.email.toLowerCase().trim()) || [];
 
-    // 4. Combina todos os emails permitidos
-    const allowedEmails = [...participantEmails, ...externalEmails];
+    // 5. Combina todos os emails permitidos (solicitante + participantes SEGET + externos)
+    const allowedEmails = [
+      solicitanteEmail,
+      ...participantEmails,
+      ...externalEmails,
+    ].filter(Boolean); // Remove valores nulos/undefined
 
-    // 5. Valida se o email está na lista de permitidos
+    console.log('Email verificando:', verifyingEmail);
+    console.log('Emails permitidos:', allowedEmails);
+
+    // 6. Valida se o email está na lista de permitidos
     if (!allowedEmails.includes(verifyingEmail)) {
       throw new BadRequestException(
         'E-mail não cadastrado na base de participantes deste agendamento. Por favor, dirija-se ao RH para atualizar seu e-mail.',
       );
     }
 
-    // 6. Verifica se o email existe na tabela de employees
+    // 7. Se é o solicitante do agendamento
+    if (verifyingEmail === solicitanteEmail) {
+      return {
+        exists: true,
+        userData: {
+          name: booking.nome_completo,
+          isEmployee: true,
+        },
+      };
+    }
+
+    // 8. Verifica se o email existe na tabela de employees
     const employee = await this.employeeRepository.findOneBy({
       email: verifyingEmail,
     });
@@ -75,9 +96,9 @@ export class AttendanceService {
       };
     }
 
-    // 7. Se não é employee, busca nos participantes externos
+    // 9. Se não é employee, busca nos participantes externos
     const externalParticipant = booking.external_participants?.find(
-      (p) => p.email.toLowerCase() === verifyingEmail,
+      (p) => p.email.toLowerCase().trim() === verifyingEmail,
     );
 
     if (externalParticipant) {
@@ -90,9 +111,10 @@ export class AttendanceService {
       };
     }
 
-    // Fallback (não deveria chegar aqui pois já validamos acima)
+    // 10. Fallback - email está na lista de participantes mas não encontrado em employees/externos
+    // Isso pode acontecer se o email foi adicionado manualmente na lista de participantes
     return {
-      exists: false,
+      exists: true,
       userData: {
         name: '',
         isEmployee: false,
@@ -101,7 +123,7 @@ export class AttendanceService {
   }
 
   async confirmAttendance(confirmDto: ConfirmAttendanceDto) {
-    const { bookingId, email, fullName, status } = confirmDto;
+    const { bookingId, email, fullName, status, date } = confirmDto;
 
     const booking = await this.bookingRepository.findOne({
       where: { id: bookingId, status: 'approved' },
@@ -113,23 +135,27 @@ export class AttendanceService {
       );
     }
 
-    // Validação: o email deve estar na lista de participantes SEGET ou externos
-    const verifyingEmail = email.toLowerCase();
-    const participantIds = booking.participantes || [];
-    const employeeEmails: string[] = [];
+    // Validação: o email deve estar na lista de participantes SEGET, externos ou ser o solicitante
+    const verifyingEmail = email.toLowerCase().trim();
+    
+    // Email do solicitante
+    const solicitanteEmail = booking.email?.toLowerCase().trim();
+    
+    // Participantes SEGET - o campo 'participantes' já contém emails (não IDs)
+    const participantEmails = (booking.participantes || []).map((e) =>
+      e.toLowerCase().trim(),
+    );
 
-    if (participantIds.length > 0) {
-      const employees = await this.employeeRepository
-        .createQueryBuilder('employee')
-        .where('employee.id IN (:...ids)', { ids: participantIds })
-        .getMany();
-
-      employeeEmails.push(...employees.map((e) => e.email.toLowerCase()));
-    }
-
+    // Participantes externos
     const externalEmails =
-      booking.external_participants?.map((p) => p.email.toLowerCase()) || [];
-    const allowedEmails = [...employeeEmails, ...externalEmails];
+      booking.external_participants?.map((p) => p.email.toLowerCase().trim()) || [];
+    
+    // Combina todos os emails permitidos
+    const allowedEmails = [
+      solicitanteEmail,
+      ...participantEmails,
+      ...externalEmails,
+    ].filter(Boolean);
 
     if (!allowedEmails.includes(verifyingEmail)) {
       throw new BadRequestException(
@@ -137,97 +163,118 @@ export class AttendanceService {
       );
     }
 
-    // Validação de horário: só pode confirmar dentro do período do agendamento
-    const now = new Date();
+    // Determina a data de confirmação
     const dates = booking.dates || [];
-
-    if (dates.length > 0) {
-      // Pega a primeira e última data do agendamento
-      const sortedDates = [...dates].sort();
-      const firstDateStr = sortedDates[0];
-      const lastDateStr = sortedDates[sortedDates.length - 1];
-
-      // Monta o horário de início (primeira data + hora_inicio)
-      const [startYear, startMonth, startDay] = firstDateStr
-        .split('-')
-        .map(Number);
-      const horaInicioStr = Array.isArray(booking.hora_inicio)
-        ? booking.hora_inicio[0]
-        : booking.hora_inicio;
-      const [startHour, startMinute] = horaInicioStr.split(':').map(Number);
-      const bookingStart = new Date(
-        startYear,
-        startMonth - 1,
-        startDay,
-        startHour,
-        startMinute,
-      );
-
-      // Monta o horário de fim (última data + hora_fim)
-      const [endYear, endMonth, endDay] = lastDateStr.split('-').map(Number);
-      const horaFimStr = Array.isArray(booking.hora_fim)
-        ? booking.hora_fim[booking.hora_fim.length - 1]
-        : booking.hora_fim;
-      const [endHour, endMinute] = horaFimStr.split(':').map(Number);
-      const bookingEnd = new Date(
-        endYear,
-        endMonth - 1,
-        endDay,
-        endHour,
-        endMinute,
-      );
-
-      if (now < bookingStart) {
-        const formattedStart = bookingStart.toLocaleString('pt-BR', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        });
+    let attendanceDate: string;
+    
+    if (date) {
+      // Se uma data foi especificada, verifica se ela pertence ao agendamento
+      if (!dates.includes(date)) {
         throw new BadRequestException(
-          `A confirmação de presença só pode ser realizada a partir do início do agendamento (${formattedStart}).`,
+          'A data especificada não faz parte deste agendamento.',
         );
       }
-
-      if (now > bookingEnd) {
-        const formattedEnd = bookingEnd.toLocaleString('pt-BR', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        throw new BadRequestException(
-          `O período para confirmação de presença já encerrou (${formattedEnd}). Entre em contato com a administração.`,
-        );
+      attendanceDate = date;
+    } else if (dates.length === 1) {
+      // Se só tem uma data, usa ela automaticamente
+      attendanceDate = dates[0];
+    } else {
+      // Se tem múltiplas datas e nenhuma foi especificada, usa a data atual se pertencer ao agendamento
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      if (dates.includes(today)) {
+        attendanceDate = today;
+      } else {
+        // Se a data atual não está no agendamento, usa a primeira data
+        const sortedDates = [...dates].sort();
+        attendanceDate = sortedDates[0];
       }
+    }
+
+    // Validação de horário: só pode confirmar dentro do período do agendamento para a data específica
+    const now = new Date();
+
+    // Monta o horário de início e fim para a data específica
+    const dateIndex = dates.indexOf(attendanceDate);
+    const [year, month, day] = attendanceDate.split('-').map(Number);
+    
+    const horaInicioStr = Array.isArray(booking.hora_inicio)
+      ? booking.hora_inicio[dateIndex] || booking.hora_inicio[0]
+      : booking.hora_inicio;
+    
+    if (!horaInicioStr) {
+      throw new BadRequestException('Horário de início não encontrado para esta data.');
+    }
+    
+    const [startHour, startMinute] = horaInicioStr.split(':').map(Number);
+    const bookingStart = new Date(year, month - 1, day, startHour, startMinute);
+
+    const horaFimStr = Array.isArray(booking.hora_fim)
+      ? booking.hora_fim[dateIndex] || booking.hora_fim[booking.hora_fim.length - 1]
+      : booking.hora_fim;
+    
+    if (!horaFimStr) {
+      throw new BadRequestException('Horário de término não encontrado para esta data.');
+    }
+    
+    const [endHour, endMinute] = horaFimStr.split(':').map(Number);
+    const bookingEnd = new Date(year, month - 1, day, endHour, endMinute);
+
+    if (now < bookingStart) {
+      const formattedStart = bookingStart.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      throw new BadRequestException(
+        `A confirmação de presença só pode ser realizada a partir do início do agendamento (${formattedStart}).`,
+      );
+    }
+
+    if (now > bookingEnd) {
+      const formattedEnd = bookingEnd.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      throw new BadRequestException(
+        `O período para confirmação de presença já encerrou (${formattedEnd}). Entre em contato com a administração.`,
+      );
     }
 
     const employee = await this.employeeRepository.findOneBy({
       email: email.toLowerCase(),
     });
 
-    let attendance = await this.attendanceRepository.findOneBy({
+    // Busca registro existente para a mesma data
+    const existingAttendance = await this.attendanceRepository.findOneBy({
       booking_id: bookingId,
       email: email.toLowerCase(),
+      attendance_date: attendanceDate,
     });
 
-    if (attendance) {
-      attendance.status = status;
-      attendance.full_name = fullName;
-      attendance.is_visitor = !employee;
-      attendance.confirmed_at = new Date();
-    } else {
-      attendance = this.attendanceRepository.create({
-        booking_id: bookingId,
-        email: email.toLowerCase(),
-        full_name: fullName,
-        status: status,
-        is_visitor: !employee,
-        confirmed_at: new Date(),
-      });
+    // Se já existe uma confirmação para esta data, impede nova confirmação
+    if (existingAttendance) {
+      const formattedDate = new Date(attendanceDate + 'T00:00:00').toLocaleDateString('pt-BR');
+      const statusText = existingAttendance.status === 'Presente' ? 'presença' : 'ausência';
+      throw new BadRequestException(
+        `Você já confirmou sua ${statusText} para o dia ${formattedDate}. Não é possível alterar a confirmação.`,
+      );
     }
+
+    // Cria novo registro de confirmação
+    const attendance = this.attendanceRepository.create({
+      booking_id: bookingId,
+      email: email.toLowerCase(),
+      full_name: fullName,
+      status: status,
+      is_visitor: !employee,
+      attendance_date: attendanceDate,
+      confirmed_at: new Date(),
+    });
 
     const savedRecord = await this.attendanceRepository.save(attendance);
 
@@ -236,7 +283,8 @@ export class AttendanceService {
     return {
       success: true,
       message: 'Presença confirmada com sucesso',
-      attendance: savedRecord, //
+      attendance: savedRecord,
+      date: attendanceDate,
     };
   }
 }

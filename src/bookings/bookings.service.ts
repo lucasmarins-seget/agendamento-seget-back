@@ -501,22 +501,37 @@ export class BookingsService {
       const dateIndex = booking.dates.indexOf(date);
       if (dateIndex === -1) return;
 
-      const startTime = booking.hora_inicio[dateIndex];
-      const endTime = booking.hora_fim[dateIndex];
+      const startTime = booking.hora_inicio?.[dateIndex];
+      const endTime = booking.hora_fim?.[dateIndex];
+      
+      // Proteção contra valores undefined
+      if (!startTime || !endTime) return;
+      
       const [startHour, startMin] = startTime.split(':').map(Number);
       const [endHour, endMin] = endTime.split(':').map(Number);
+      const startInMinutes = startHour * 60 + startMin;
+      const endInMinutes = endHour * 60 + endMin;
 
-      // Adiciona todos os horários dentro do intervalo
-      const hoursToCheck = [9, 10, 11, 12, 13, 14, 15, 16, 17];
+      // Horários disponíveis para Delta e Receitório (08:00-17:00)
+      const hoursToCheck = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 
       hoursToCheck.forEach((h) => {
         const hourInMinutes = h * 60;
-        const startInMinutes = startHour * 60 + startMin;
-        const endInMinutes = endHour * 60 + endMin;
 
-        // Se o horário 'h' cai dentro do intervalo reservado (inclusive início, exclusive fim)
-        // Ex: 13:00 as 14:00 -> Bloqueia 13:00.
-        if (hourInMinutes >= startInMinutes && hourInMinutes < endInMinutes) {
+        // Bloqueia o horário se houver qualquer sobreposição
+        // Um horário H está ocupado se uma reserva começa antes ou em H E termina depois de H
+        // 
+        // Exemplo 1: Reserva 08:00-10:00
+        //   - 08:00 está ocupado (480 <= 480 < 600) ✓
+        //   - 09:00 está ocupado (480 <= 540 < 600) ✓
+        //   - 10:00 NÃO está ocupado (480 <= 600 < 600 é falso) ✗
+        //
+        // Exemplo 2: Reserva 08:00-09:00
+        //   - 08:00 está ocupado (480 <= 480 < 540) ✓
+        //   - 09:00 NÃO está ocupado (480 <= 540 < 540 é falso) ✗
+        //
+        // Isso garante que não se pode agendar em horários já ocupados
+        if (startInMinutes <= hourInMinutes && hourInMinutes < endInMinutes) {
           occupiedHours.add(`${h.toString().padStart(2, '0')}:00`);
         }
       });

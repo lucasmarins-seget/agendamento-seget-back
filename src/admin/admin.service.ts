@@ -40,6 +40,7 @@ type AttendanceResponse = {
   confirmedTime: string | null;
   isVisitor: boolean | null;
   status: string;
+  attendanceDate: string | null; // Data específica da confirmação
 };
 
 @Injectable()
@@ -642,94 +643,142 @@ export class AdminService {
 
     const now = new Date();
     const dates = booking.dates || [];
-
-    // Ordena as datas e pega a última para determinar quando o agendamento termina
     const sortedDates = [...dates].sort();
-    const lastDateStr =
-      sortedDates.length > 0 ? sortedDates[sortedDates.length - 1] : null;
 
-    // Calcula o horário de término do agendamento (última data + hora_fim)
-    let bookingEndTime = now;
-    if (lastDateStr) {
-      const [year, month, day] = lastDateStr.split('-').map(Number);
-      const horaFimStr = Array.isArray(booking.hora_fim)
-        ? booking.hora_fim[booking.hora_fim.length - 1]
-        : booking.hora_fim;
-      const [hour, minute] = horaFimStr.split(':').map(Number);
-      bookingEndTime = new Date(year, month - 1, day, hour, minute);
+    // Estrutura de presença organizada por data
+    const attendanceByDate: Record<string, AttendanceResponse[]> = {};
+
+    // Inicializa todas as datas com array vazio
+    for (const dateStr of sortedDates) {
+      attendanceByDate[dateStr] = [];
     }
 
-    // Monta a lista de presença a partir dos registros confirmados
-    const attendance: AttendanceResponse[] = (
-      booking.attendance_records || []
-    ).map((record) => ({
-      id: record.id,
-      fullName: record.full_name,
-      email: record.email.toLowerCase(),
-      confirmedAt: record.confirmed_at?.toLocaleDateString('pt-BR') || null,
-      confirmedTime:
-        record.confirmed_at?.toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }) || null,
-      isVisitor: record.is_visitor,
-      status: record.status,
-    }));
-
-    const respondedEmails = attendance.map((a) => a.email);
-
-    // Busca nomes dos participantes SEGET que ainda não confirmaram
-    const pendingSegetEmails = (booking.participantes || []).filter(
-      (email) => !respondedEmails.includes(email.toLowerCase()),
-    );
-    const participantsWithNames =
-      await this.getParticipantsWithNames(pendingSegetEmails);
-    const emailToName = new Map(
-      participantsWithNames.map((p) => [p.email.toLowerCase(), p.name]),
-    );
-
-    // Adiciona participantes SEGET pendentes (não confirmaram)
-    for (const email of pendingSegetEmails) {
-      // Se já passou do horário de término do agendamento, marca como "Não Confirmado"
-      // Caso contrário, está "Pendente" (ainda pode confirmar)
-      let status = 'Pendente';
-      if (now > bookingEndTime) {
-        status = 'Não Confirmado';
+    // Agrupa os registros de presença por data
+    const attendanceRecords = booking.attendance_records || [];
+    for (const record of attendanceRecords) {
+      const recordDate = record.attendance_date;
+      
+      // Se o registro tem uma data válida que pertence ao agendamento
+      if (recordDate && dates.includes(recordDate)) {
+        if (!attendanceByDate[recordDate]) {
+          attendanceByDate[recordDate] = [];
+        }
+        attendanceByDate[recordDate].push({
+          id: record.id,
+          fullName: record.full_name,
+          email: record.email.toLowerCase(),
+          confirmedAt: record.confirmed_at?.toLocaleDateString('pt-BR') || null,
+          confirmedTime:
+            record.confirmed_at?.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }) || null,
+          isVisitor: record.is_visitor,
+          status: record.status,
+          attendanceDate: recordDate,
+        });
+      } else if (!recordDate && dates.length === 1) {
+        // Compatibilidade: registros antigos sem data em agendamentos de data única
+        const singleDate = dates[0];
+        if (!attendanceByDate[singleDate]) {
+          attendanceByDate[singleDate] = [];
+        }
+        attendanceByDate[singleDate].push({
+          id: record.id,
+          fullName: record.full_name,
+          email: record.email.toLowerCase(),
+          confirmedAt: record.confirmed_at?.toLocaleDateString('pt-BR') || null,
+          confirmedTime:
+            record.confirmed_at?.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }) || null,
+          isVisitor: record.is_visitor,
+          status: record.status,
+          attendanceDate: singleDate,
+        });
       }
-
-      const participantName = emailToName.get(email.toLowerCase()) || email;
-
-      attendance.push({
-        id: null,
-        fullName: participantName,
-        email: email,
-        confirmedAt: null,
-        confirmedTime: null,
-        isVisitor: false, // Participante SEGET não é visitante
-        status: status,
-      });
     }
 
-    // Adiciona participantes externos pendentes (não confirmaram)
-    const externalParticipants = booking.external_participants || [];
-    for (const external of externalParticipants) {
-      // Verifica se o externo já confirmou
-      if (!respondedEmails.includes(external.email.toLowerCase())) {
+    // Para cada data, adiciona participantes que ainda não confirmaram
+    for (const dateStr of sortedDates) {
+      const dateIndex = dates.indexOf(dateStr);
+      const [year, month, day] = dateStr.split('-').map(Number);
+      
+      // Calcula o horário de término para esta data específica
+      const horaFimStr = Array.isArray(booking.hora_fim)
+        ? booking.hora_fim[dateIndex] || booking.hora_fim[booking.hora_fim.length - 1]
+        : booking.hora_fim;
+      
+      if (!horaFimStr) {
+        console.error('[ERROR] Horário de término não encontrado para a data:', dateStr);
+        continue; // Pula esta data se não tiver horário
+      }
+      
+      const [hour, minute] = horaFimStr.split(':').map(Number);
+      const bookingEndTime = new Date(year, month - 1, day, hour, minute);
+
+      // Lista de emails que já confirmaram para esta data
+      const confirmedEmailsForDate = attendanceByDate[dateStr].map((a) => a.email);
+
+      // Busca nomes dos participantes SEGET que ainda não confirmaram para esta data
+      const pendingSegetEmails = (booking.participantes || []).filter(
+        (email) => !confirmedEmailsForDate.includes(email.toLowerCase()),
+      );
+      const participantsWithNames =
+        await this.getParticipantsWithNames(pendingSegetEmails);
+      const emailToName = new Map(
+        participantsWithNames.map((p) => [p.email.toLowerCase(), p.name]),
+      );
+
+      // Adiciona participantes SEGET pendentes (não confirmaram) para esta data
+      for (const email of pendingSegetEmails) {
         let status = 'Pendente';
         if (now > bookingEndTime) {
           status = 'Não Confirmado';
         }
 
-        attendance.push({
+        const participantName = emailToName.get(email.toLowerCase()) || email;
+
+        attendanceByDate[dateStr].push({
           id: null,
-          fullName: external.full_name,
-          email: external.email,
+          fullName: participantName,
+          email: email,
           confirmedAt: null,
           confirmedTime: null,
-          isVisitor: true, // Participante externo é visitante
+          isVisitor: false,
           status: status,
+          attendanceDate: dateStr,
         });
       }
+
+      // Adiciona participantes externos pendentes (não confirmaram) para esta data
+      const externalParticipants = booking.external_participants || [];
+      for (const external of externalParticipants) {
+        if (!confirmedEmailsForDate.includes(external.email.toLowerCase())) {
+          let status = 'Pendente';
+          if (now > bookingEndTime) {
+            status = 'Não Confirmado';
+          }
+
+          attendanceByDate[dateStr].push({
+            id: null,
+            fullName: external.full_name,
+            email: external.email,
+            confirmedAt: null,
+            confirmedTime: null,
+            isVisitor: true,
+            status: status,
+            attendanceDate: dateStr,
+          });
+        }
+      }
+    }
+
+    // Para compatibilidade, monta a lista "flat" de attendance (união de todas as datas)
+    const attendance: AttendanceResponse[] = [];
+    for (const dateStr of sortedDates) {
+      attendance.push(...attendanceByDate[dateStr]);
     }
 
     return {
@@ -745,6 +794,7 @@ export class AdminService {
         description: booking.descricao,
       },
       attendance,
+      attendanceByDate, // Nova estrutura organizada por data
     };
   }
 
@@ -1211,8 +1261,9 @@ export class AdminService {
       limit?: number;
     },
   ) {
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    try {
+      const today = new Date();
+      const todayStr = today.toISOString().split('T')[0];
 
     // Calcula início e fim da semana (segunda a sexta)
     const dayOfWeek = today.getDay();
@@ -1251,19 +1302,19 @@ export class AdminService {
     switch (filters.filterType) {
       case 'today':
         filteredBookings = allBookings.filter((b) =>
-          b.dates?.some((d) => d === todayStr),
+          Array.isArray(b.dates) && b.dates.some((d) => d === todayStr),
         );
         filterTitle = 'Reservas de Hoje';
         break;
       case 'week':
         filteredBookings = allBookings.filter((b) =>
-          b.dates?.some((d) => d >= mondayStr && d <= fridayStr),
+          Array.isArray(b.dates) && b.dates.some((d) => d >= mondayStr && d <= fridayStr),
         );
         filterTitle = 'Reservas da Semana';
         break;
       case 'future':
         filteredBookings = allBookings.filter((b) =>
-          b.dates?.some((d) => d >= todayStr),
+          Array.isArray(b.dates) && b.dates.some((d) => d >= todayStr),
         );
         filterTitle = 'Reservas Futuras';
         break;
@@ -1299,12 +1350,17 @@ export class AdminService {
         if (dateB !== dateA) {
           return dateB.localeCompare(dateA);
         }
-        const horaInicioA = Array.isArray(a.hora_inicio)
+        
+        const rawHoraInicioA = Array.isArray(a.hora_inicio)
           ? a.hora_inicio[0]
-          : a.hora_inicio || '';
-        const horaInicioB = Array.isArray(b.hora_inicio)
+          : a.hora_inicio;
+        const horaInicioA = rawHoraInicioA || '';
+
+        const rawHoraInicioB = Array.isArray(b.hora_inicio)
           ? b.hora_inicio[0]
-          : b.hora_inicio || '';
+          : b.hora_inicio;
+        const horaInicioB = rawHoraInicioB || '';
+        
         return horaInicioB.localeCompare(horaInicioA);
       });
 
@@ -1318,28 +1374,32 @@ export class AdminService {
     const paginatedBookings = sortedBookings
       .slice(skip, skip + limit)
       .map((booking) => ({
-        id: booking.id,
+        id: booking.id || '',
         responsavel:
           booking.responsavel || booking.nome_completo || 'Não informado',
         setor: booking.setor_solicitante || 'Não informado',
-        room: booking.room_name,
-        dates: booking.dates,
-        horaInicio: booking.hora_inicio,
-        horaFim: booking.hora_fim,
-        status: booking.status,
+        room: booking.room_name || '',
+        dates: booking.dates || [],
+        horaInicio: booking.hora_inicio || [],
+        horaFim: booking.hora_fim || [],
+        status: booking.status || 'pending',
         finalidade: booking.finalidade || '',
       }));
 
-    return {
-      filterTitle,
-      filterType: filters.filterType,
-      bookings: paginatedBookings,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages,
-      },
-    };
+      return {
+        filterTitle,
+        filterType: filters.filterType,
+        bookings: paginatedBookings,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages,
+        },
+      };
+    } catch (error) {
+      console.error('Erro em getFilteredBookings:', error);
+      throw error;
+    }
   }
 }
