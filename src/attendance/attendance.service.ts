@@ -40,25 +40,17 @@ export class AttendanceService {
       );
     }
 
-    // 2. Busca emails dos participantes SEGET (employees)
-    const participantIds = booking.participantes || [];
-    const employeeEmails: string[] = [];
-
-    if (participantIds.length > 0) {
-      const employees = await this.employeeRepository
-        .createQueryBuilder('employee')
-        .where('employee.id IN (:...ids)', { ids: participantIds })
-        .getMany();
-
-      employeeEmails.push(...employees.map((e) => e.email.toLowerCase()));
-    }
+    // 2. Participantes SEGET - o campo 'participantes' já contém emails
+    const participantEmails = (booking.participantes || []).map((e) =>
+      e.toLowerCase(),
+    );
 
     // 3. Busca emails dos participantes externos
     const externalEmails =
       booking.external_participants?.map((p) => p.email.toLowerCase()) || [];
 
     // 4. Combina todos os emails permitidos
-    const allowedEmails = [...employeeEmails, ...externalEmails];
+    const allowedEmails = [...participantEmails, ...externalEmails];
 
     // 5. Valida se o email está na lista de permitidos
     if (!allowedEmails.includes(verifyingEmail)) {
