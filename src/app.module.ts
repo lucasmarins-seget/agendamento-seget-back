@@ -29,7 +29,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_DATABASE'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: false, // Desabilitado temporariamente - executar migration manual
+        synchronize: false, // Desabilitado - migration manual
         // Configurações de timeout e retry
         connectTimeout: 60000, // 60 segundos
         timeout: 60000,
@@ -51,4 +51,4 @@ import { SchedulerModule } from './scheduler/scheduler.module';
   controllers: [AppController],
   providers: [AppService, MailService],
 })
-export class AppModule {}
+export class AppModule { }

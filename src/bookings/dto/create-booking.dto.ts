@@ -26,7 +26,7 @@ export class ExternalParticipantDto {
 
   @IsString()
   @IsOptional()
-  matricula?: string;
+  orgao?: string;
 }
 
 export class CreateBookingDto {

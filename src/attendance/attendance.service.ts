@@ -22,7 +22,7 @@ export class AttendanceService {
     @InjectRepository(Employee)
     private readonly employeeRepository: Repository<Employee>,
     private readonly mailService: MailService,
-  ) {}
+  ) { }
 
   async verifyEmail(verifyEmailDto: VerifyEmailDto) {
     const { email, bookingId } = verifyEmailDto;
@@ -137,10 +137,10 @@ export class AttendanceService {
 
     // Validação: o email deve estar na lista de participantes SEGET, externos ou ser o solicitante
     const verifyingEmail = email.toLowerCase().trim();
-    
+
     // Email do solicitante
     const solicitanteEmail = booking.email?.toLowerCase().trim();
-    
+
     // Participantes SEGET - o campo 'participantes' já contém emails (não IDs)
     const participantEmails = (booking.participantes || []).map((e) =>
       e.toLowerCase().trim(),
@@ -149,7 +149,7 @@ export class AttendanceService {
     // Participantes externos
     const externalEmails =
       booking.external_participants?.map((p) => p.email.toLowerCase().trim()) || [];
-    
+
     // Combina todos os emails permitidos
     const allowedEmails = [
       solicitanteEmail,
@@ -166,7 +166,7 @@ export class AttendanceService {
     // Determina a data de confirmação
     const dates = booking.dates || [];
     let attendanceDate: string;
-    
+
     if (date) {
       // Se uma data foi especificada, verifica se ela pertence ao agendamento
       if (!dates.includes(date)) {
@@ -196,26 +196,26 @@ export class AttendanceService {
     // Monta o horário de início e fim para a data específica
     const dateIndex = dates.indexOf(attendanceDate);
     const [year, month, day] = attendanceDate.split('-').map(Number);
-    
+
     const horaInicioStr = Array.isArray(booking.hora_inicio)
       ? booking.hora_inicio[dateIndex] || booking.hora_inicio[0]
       : booking.hora_inicio;
-    
+
     if (!horaInicioStr) {
       throw new BadRequestException('Horário de início não encontrado para esta data.');
     }
-    
+
     const [startHour, startMinute] = horaInicioStr.split(':').map(Number);
     const bookingStart = new Date(year, month - 1, day, startHour, startMinute);
 
     const horaFimStr = Array.isArray(booking.hora_fim)
       ? booking.hora_fim[dateIndex] || booking.hora_fim[booking.hora_fim.length - 1]
       : booking.hora_fim;
-    
+
     if (!horaFimStr) {
       throw new BadRequestException('Horário de término não encontrado para esta data.');
     }
-    
+
     const [endHour, endMinute] = horaFimStr.split(':').map(Number);
     const bookingEnd = new Date(year, month - 1, day, endHour, endMinute);
 

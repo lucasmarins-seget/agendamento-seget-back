@@ -22,6 +22,10 @@ export class ExternalParticipant {
   email: string;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
+  orgao: string | null;
+
+  // Mantido para evitar erro de drop column no TypeORM sync
+  @Column({ type: 'varchar', length: 100, nullable: true })
   matricula: string | null;
 
   @ManyToOne(() => Booking, (booking) => booking.external_participants, {

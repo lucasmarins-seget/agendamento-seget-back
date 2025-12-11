@@ -65,9 +65,22 @@ export class MailService {
     content: string,
     statusColor: { bg: string; text: string; border: string },
     roomColor: string,
+    roomName?: string,
   ): string {
     // Cor padrão da Prefeitura de Maricá para o header
     const headerColor = '#bd202e';
+    
+    // Mapeamento de logos
+    const roomLogos: Record<string, string> = {
+      sala_delta: 'icon-delta.png',
+      receitorio: 'icon-receitorio.png',
+      escola_fazendaria: 'icon-escola.png',
+    };
+
+    // URLs das imagens
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+    const segetLogoUrl = `${frontendUrl}/seget-logo-marica.png`;
+    const roomLogoUrl = roomName && roomLogos[roomName] ? `${frontendUrl}/${roomLogos[roomName]}` : null;
 
     return `
 <!DOCTYPE html>
@@ -86,8 +99,23 @@ export class MailService {
           <!-- Header -->
           <tr>
             <td style="background: linear-gradient(135deg, ${headerColor} 0%, ${headerColor}dd 100%); padding: 32px; text-align: center;">
+              <table role="presentation" align="center" style="background-color: rgba(255, 255, 255, 0.95); border-radius: 16px; padding: 12px 24px; margin: 0 auto 24px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                <tr>
+                  <td style="padding: 0 12px;">
+                    <img src="${segetLogoUrl}" alt="SEGET Logo" height="50" style="display: block; height: 50px; width: auto; border: 0;" />
+                  </td>
+                  ${
+                    roomLogoUrl
+                      ? `
+                  <td style="padding: 0 12px; border-left: 1px solid #e5e7eb;">
+                    <img src="${roomLogoUrl}" alt="Logo da Sala" height="50" style="display: block; height: 50px; width: auto; border: 0;" />
+                  </td>`
+                      : ''
+                  }
+                </tr>
+              </table>
               <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                🏢 Sistema de Agendamentos SEGET
+                Sistema de Agendamentos SEGET
               </h1>
             </td>
           </tr>
@@ -405,6 +433,7 @@ export class MailService {
       content,
       statusColor,
       roomColor,
+      booking.room_name,
     );
 
     await this.mailerService.sendMail({
@@ -451,6 +480,7 @@ export class MailService {
       content,
       statusColor,
       roomColor,
+      booking.room_name,
     );
 
     await this.mailerService.sendMail({
@@ -610,6 +640,7 @@ export class MailService {
       content,
       statusColor,
       roomColor,
+      booking.room_name,
     );
 
     await this.mailerService.sendMail({
@@ -709,6 +740,7 @@ export class MailService {
       content,
       statusColor,
       roomColor,
+      booking.room_name,
     );
 
     await this.mailerService.sendMail({
@@ -760,6 +792,7 @@ export class MailService {
       content,
       statusColor,
       roomColor,
+      booking.room_name,
     );
 
     await this.mailerService.sendMail({
@@ -812,6 +845,7 @@ export class MailService {
       content,
       statusColor,
       roomColor,
+      booking.room_name,
     );
 
     await this.mailerService.sendMail({
@@ -864,6 +898,7 @@ export class MailService {
       content,
       statusColor,
       roomColor,
+      booking.room_name,
     );
 
     await this.mailerService.sendMail({
@@ -1097,6 +1132,7 @@ export class MailService {
       content,
       statusColor,
       roomColor,
+      booking.room_name,
     );
 
     await this.mailerService.sendMail({
@@ -1195,6 +1231,7 @@ export class MailService {
       content,
       statusColor,
       roomColor,
+      booking.room_name,
     );
 
     await this.mailerService.sendMail({
@@ -1257,9 +1294,7 @@ export class MailService {
     // Gera URL para QR Code usando API pública
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(confirmationUrl)}`;
 
-    // URLs das logos (usando o frontend como CDN)
-    const segetLogoUrl = `${frontendUrl}/seget-logo-marica.png`;
-    const roomLogoUrl = `${frontendUrl}/icon-${booking.room_name === 'sala_delta' ? 'delta' : booking.room_name === 'receitorio' ? 'receitorio' : 'escola'}.png`;
+
 
     const displayName = name || email.split('@')[0];
     const greeting = isRequester
@@ -1271,11 +1306,7 @@ export class MailService {
       : `Você é participante de um evento na <strong style="color: ${roomColor};">${getRoomLabel(booking.room_name)}</strong> que está acontecendo agora. Confirme sua presença.`;
 
     const content = `
-      <!-- Logos -->
-      <div style="text-align: center; margin-bottom: 24px;">
-        <img src="${segetLogoUrl}" alt="SEGET Logo" style="height: 60px; margin-right: 16px;" onerror="this.style.display='none'" />
-        <img src="${roomLogoUrl}" alt="Logo da Sala" style="height: 60px;" onerror="this.style.display='none'" />
-      </div>
+
 
       <div style="margin-bottom: 24px;">
         <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
@@ -1367,6 +1398,7 @@ export class MailService {
       content,
       statusColor,
       roomColor,
+      booking.room_name,
     );
 
     // Gera o PDF de confirmação

@@ -36,7 +36,7 @@ export class BookingsService {
     @InjectRepository(ExternalParticipant)
     private readonly externalParticipantRepository: Repository<ExternalParticipant>,
     private readonly mailService: MailService,
-  ) {}
+  ) { }
 
   async create(createBookingDto: CreateBookingDto) {
     const {
@@ -252,7 +252,7 @@ export class BookingsService {
             booking_id: savedBooking.id,
             full_name: ep.fullName,
             email: ep.email,
-            matricula: ep.matricula,
+            orgao: ep.orgao,
           }),
       );
       await this.externalParticipantRepository.save(externalParticipants);
@@ -503,10 +503,10 @@ export class BookingsService {
 
       const startTime = booking.hora_inicio?.[dateIndex];
       const endTime = booking.hora_fim?.[dateIndex];
-      
+
       // Proteção contra valores undefined
       if (!startTime || !endTime) return;
-      
+
       const [startHour, startMin] = startTime.split(':').map(Number);
       const [endHour, endMin] = endTime.split(':').map(Number);
       const startInMinutes = startHour * 60 + startMin;
