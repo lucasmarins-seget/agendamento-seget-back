@@ -10,6 +10,7 @@ async function bootstrap() {
       'http://agendamento.127.0.0.1.nip.io',
       'http://localhost:8081',
       'http://127.0.0.1:8081',
+      
     ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,

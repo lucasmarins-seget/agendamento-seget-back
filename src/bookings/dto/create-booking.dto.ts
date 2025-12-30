@@ -42,7 +42,7 @@ export class CreateBookingDto {
 
   @IsString()
   @IsNotEmpty()
-  @Matches(/^[a-zA-Z\s]*$/, { message: 'Nome não pode conter números' })
+  @Matches(/^[a-zA-Z\u00C0-\u00FF\s]*$/, { message: 'Nome deve conter apenas letras e acentos (sem números)' })
   @Transform(({ value }) => value, { toClassOnly: true })
   nomeCompleto: string;
 

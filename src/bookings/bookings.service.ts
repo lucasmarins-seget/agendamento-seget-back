@@ -322,7 +322,7 @@ export class BookingsService {
 
   // --- SEARCH (Listagem Pública) ---
   async search(searchBookingDto: SearchBookingDto) {
-    const { room_name, dates, name, status, sector } = searchBookingDto;
+    const { room_name, dates, name, status, sector, purpose } = searchBookingDto;
 
     const where: FindOptionsWhere<Booking> = {};
 
@@ -330,6 +330,7 @@ export class BookingsService {
     if (status) where.status = status;
     if (sector) where.setor_solicitante = Like(`%${sector}%`);
     if (room_name) where.room_name = room_name;
+    if (purpose) where.finalidade = purpose
     if (dates && dates.length > 0) {
       where.dates = In(dates);
     }
@@ -347,6 +348,7 @@ export class BookingsService {
         'hora_fim',
         'status',
         'local',
+        'finalidade',
       ],
     });
 
