@@ -69,19 +69,18 @@ export class MailService {
   ): string {
     // Cor padrão da Prefeitura de Maricá para o header
     const headerColor = '#bd202e';
-    
-    // Mapeamento de logos
+
+    const segetLogoUrl = 'https://i.imgur.com/rPY6ZWg.png';
+
+    // Mapeamento das logos por sala
     const roomLogos: Record<string, string> = {
-      sala_delta: 'icon-delta.png',
-      receitorio: 'icon-receitorio.png',
-      escola_fazendaria: 'icon-escola.png',
+      sala_delta: 'https://i.imgur.com/O2Nsd6L.png',
+      receitorio: 'https://i.imgur.com/BZ00Kfo.png',
+      escola_fazendaria: 'https://i.imgur.com/BSUewFf.png',
     };
 
-    // URLs das imagens
-    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
-    const segetLogoUrl = `${frontendUrl}/seget-logo-marica.png`;
-    const roomLogoUrl = roomName && roomLogos[roomName] ? `${frontendUrl}/${roomLogos[roomName]}` : null;
-
+    // Define a URL da logo da sala (se houver nome de sala e mapeamento)
+    const roomLogoUrl = roomName && roomLogos[roomName] ? roomLogos[roomName] : null;
     return `
 <!DOCTYPE html>
 <html lang="pt-BR">
