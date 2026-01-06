@@ -67,6 +67,8 @@ export class Booking {
   @Column({ type: 'varchar', length: 255, nullable: true })
   local: string | null;
 
+  @Column({ type: 'simple-array', nullable: true })
+  confirmation_emails_sent: string[];
   // --- Equipamentos ---
   @Column({ type: 'varchar', length: 10 })
   projetor: string;

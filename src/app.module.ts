@@ -11,9 +11,13 @@ import { AuthModule } from './auth/auth.module';
 import { MailModule } from './mail/mail.module';
 import { MailService } from './mail/mail.service';
 import { EmployeesModule } from './employees/employees.module';
+import { ScheduleModule } from '@nestjs/schedule'; // <--- IMPORTAR
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(), // <--- ATIVAR O CRON
+    TasksModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),
