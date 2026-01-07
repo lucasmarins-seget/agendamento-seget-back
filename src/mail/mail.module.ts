@@ -17,10 +17,9 @@ import { MailService } from './mail.service';
             user: configService.get<string>('MAIL_USER'),
             pass: configService.get<string>('MAIL_PASSWORD'),
           },
-
-          defaults: {
-            from: '"Sistema de Agendamento" <nao-responda@seget.com>',
-          },
+        },
+        defaults: {
+          from: '"Sistema de Agendamento" <nao-responda@seget.com>',
         },
         // TODO: Configurar templates de e-mail (Handlebars, etc)
       }),
@@ -29,4 +28,4 @@ import { MailService } from './mail.service';
   providers: [MailService],
   exports: [MailService], // EXPORTA o serviço
 })
-export class MailModule {}
+export class MailModule { }

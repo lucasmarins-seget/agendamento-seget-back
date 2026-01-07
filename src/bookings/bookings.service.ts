@@ -396,9 +396,11 @@ export class BookingsService {
 
     // Calcula se a confirmação de presença está habilitada
     // A confirmação só pode ser feita no dia e horário do agendamento (início até fim)
+    // Usa timezone de São Paulo para garantir horário correto
     const now = new Date();
-    const today = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const currentTime = now.toTimeString().slice(0, 5); // HH:MM
+    const saoPauloTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const today = saoPauloTime.toISOString().split('T')[0]; // YYYY-MM-DD
+    const currentTime = saoPauloTime.toTimeString().slice(0, 5); // HH:MM
 
     // Verifica se hoje é uma das datas do agendamento
     const todayIndex = booking.dates.indexOf(today);
