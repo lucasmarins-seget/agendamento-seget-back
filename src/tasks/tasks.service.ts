@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like } from 'typeorm';
 import { Booking } from '../entities/booking.entity';
+import { AttendanceRecord } from '../entities/attendance-record.entity';
 import { MailService } from '../mail/mail.service';
 import { ConfigService } from '@nestjs/config';
 
@@ -13,6 +14,8 @@ export class TasksService {
   constructor(
     @InjectRepository(Booking)
     private readonly bookingRepository: Repository<Booking>,
+    @InjectRepository(AttendanceRecord)
+    private readonly attendanceRepository: Repository<AttendanceRecord>,
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
   ) { }
@@ -163,6 +166,80 @@ export class TasksService {
           error.stack,
         );
       }
+    }
+  }
+
+  // Cron job para marcar registros pendentes como "Não Confirmado" após o prazo
+  // Executa a cada 15 minutos
+  @Cron('*/15 * * * *', {
+    timeZone: 'America/Sao_Paulo',
+  })
+  async markUnconfirmedAttendance() {
+    this.logger.log('Verificando registros de presença pendentes após o prazo...');
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    try {
+      // Busca todos os agendamentos aprovados com datas passadas ou de hoje
+      const bookings = await this.bookingRepository.find({
+        where: {
+          status: 'approved',
+        },
+        relations: ['attendance_records'],
+      });
+
+      let updatedCount = 0;
+
+      for (const booking of bookings) {
+        const dates = booking.dates || [];
+
+        for (let dateIndex = 0; dateIndex < dates.length; dateIndex++) {
+          const dateStr = dates[dateIndex];
+          const [year, month, day] = dateStr.split('-').map(Number);
+
+          // Pega o horário de fim para esta data
+          const horaFimStr = Array.isArray(booking.hora_fim)
+            ? booking.hora_fim[dateIndex] || booking.hora_fim[booking.hora_fim.length - 1]
+            : booking.hora_fim;
+
+          if (!horaFimStr) continue;
+
+          const [endHour, endMinute] = horaFimStr.split(':').map(Number);
+          const bookingEnd = new Date(year, month - 1, day, endHour, endMinute);
+
+          // Adiciona 1 hora ao horário de fim (mesmo prazo da confirmação)
+          const deadline = new Date(bookingEnd.getTime() + 60 * 60 * 1000);
+
+          // Se o prazo já passou, marca registros pendentes como "Não Confirmado"
+          if (now > deadline) {
+            // Busca registros pendentes para esta data e agendamento
+            const pendingRecords = await this.attendanceRepository.find({
+              where: {
+                booking_id: booking.id,
+                attendance_date: dateStr,
+                status: 'Pendente',
+              },
+            });
+
+            // Atualiza cada registro pendente para "Não Confirmado"
+            for (const record of pendingRecords) {
+              record.status = 'Não Confirmado';
+              await this.attendanceRepository.save(record);
+              updatedCount++;
+            }
+          }
+        }
+      }
+
+      if (updatedCount > 0) {
+        this.logger.log(`Marcados ${updatedCount} registros como "Não Confirmado"`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Erro ao marcar registros não confirmados: ${error.message}`,
+        error.stack,
+      );
     }
   }
 }

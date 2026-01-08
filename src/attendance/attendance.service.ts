@@ -219,6 +219,9 @@ export class AttendanceService {
     const [endHour, endMinute] = horaFimStr.split(':').map(Number);
     const bookingEnd = new Date(year, month - 1, day, endHour, endMinute);
 
+    // Adiciona 1 hora ao horário de fim para permitir confirmação tardia
+    const confirmationDeadline = new Date(bookingEnd.getTime() + 60 * 60 * 1000);
+
     if (now < bookingStart) {
       const formattedStart = bookingStart.toLocaleString('pt-BR', {
         day: '2-digit',
@@ -232,8 +235,8 @@ export class AttendanceService {
       );
     }
 
-    if (now > bookingEnd) {
-      const formattedEnd = bookingEnd.toLocaleString('pt-BR', {
+    if (now > confirmationDeadline) {
+      const formattedDeadline = confirmationDeadline.toLocaleString('pt-BR', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
@@ -241,7 +244,7 @@ export class AttendanceService {
         minute: '2-digit',
       });
       throw new BadRequestException(
-        `O período para confirmação de presença já encerrou (${formattedEnd}). Entre em contato com a administração.`,
+        `O período para confirmação de presença já encerrou (${formattedDeadline}). Entre em contato com a administração.`,
       );
     }
 
@@ -250,33 +253,43 @@ export class AttendanceService {
     });
 
     // Busca registro existente para a mesma data
-    const existingAttendance = await this.attendanceRepository.findOneBy({
+    let existingAttendance = await this.attendanceRepository.findOneBy({
       booking_id: bookingId,
       email: email.toLowerCase(),
       attendance_date: attendanceDate,
     });
 
-    // Se já existe uma confirmação para esta data, impede nova confirmação
+    let savedRecord: AttendanceRecord;
+
     if (existingAttendance) {
-      const formattedDate = new Date(attendanceDate + 'T00:00:00').toLocaleDateString('pt-BR');
-      const statusText = existingAttendance.status === 'Presente' ? 'presença' : 'ausência';
-      throw new BadRequestException(
-        `Você já confirmou sua ${statusText} para o dia ${formattedDate}. Não é possível alterar a confirmação.`,
-      );
+      // Se já existe um registro mas ainda está pendente, atualiza
+      if (existingAttendance.status === 'Pendente') {
+        existingAttendance.status = status;
+        existingAttendance.full_name = fullName;
+        existingAttendance.is_visitor = !employee;
+        existingAttendance.confirmed_at = new Date();
+        savedRecord = await this.attendanceRepository.save(existingAttendance);
+      } else {
+        // Se já confirmou (Presente ou Ausente), impede alteração
+        const formattedDate = new Date(attendanceDate + 'T00:00:00').toLocaleDateString('pt-BR');
+        const statusText = existingAttendance.status === 'Presente' ? 'presença' : 'ausência';
+        throw new BadRequestException(
+          `Você já confirmou sua ${statusText} para o dia ${formattedDate}. Não é possível alterar a confirmação.`,
+        );
+      }
+    } else {
+      // Se não existe registro (caso antigo ou erro), cria um novo
+      const attendance = this.attendanceRepository.create({
+        booking_id: bookingId,
+        email: email.toLowerCase(),
+        full_name: fullName,
+        status: status,
+        is_visitor: !employee,
+        attendance_date: attendanceDate,
+        confirmed_at: new Date(),
+      });
+      savedRecord = await this.attendanceRepository.save(attendance);
     }
-
-    // Cria novo registro de confirmação
-    const attendance = this.attendanceRepository.create({
-      booking_id: bookingId,
-      email: email.toLowerCase(),
-      full_name: fullName,
-      status: status,
-      is_visitor: !employee,
-      attendance_date: attendanceDate,
-      confirmed_at: new Date(),
-    });
-
-    const savedRecord = await this.attendanceRepository.save(attendance);
 
     await this.mailService.sendAttendanceConfirmation(savedRecord, booking);
 

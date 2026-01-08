@@ -101,6 +101,81 @@ export class AdminService {
     );
   }
 
+  // Helper para criar registros de presença pendentes quando um agendamento é aprovado
+  private async createPendingAttendanceRecords(booking: Booking) {
+    const dates = booking.dates || [];
+    const allParticipants: { email: string; fullName: string; isVisitor: boolean }[] = [];
+
+    // 1. Adiciona o solicitante (sempre participante)
+    if (booking.email && booking.nome_completo) {
+      allParticipants.push({
+        email: booking.email.toLowerCase().trim(),
+        fullName: booking.nome_completo,
+        isVisitor: false,
+      });
+    }
+
+    // 2. Busca nomes dos participantes SEGET
+    const segetEmails = booking.participantes || [];
+    const participantesComNomes = await this.getParticipantsWithNames(segetEmails);
+    for (const p of participantesComNomes) {
+      allParticipants.push({
+        email: p.email.toLowerCase().trim(),
+        fullName: p.name,
+        isVisitor: false,
+      });
+    }
+
+    // 3. Adiciona participantes externos
+    const externalParticipants = booking.external_participants || [];
+    for (const external of externalParticipants) {
+      allParticipants.push({
+        email: external.email.toLowerCase().trim(),
+        fullName: external.full_name,
+        isVisitor: true,
+      });
+    }
+
+    // 4. Remove duplicatas (baseado no email)
+    const uniqueParticipants = Array.from(
+      new Map(allParticipants.map(p => [p.email, p])).values()
+    );
+
+    // 5. Cria um registro pendente para cada participante em cada data
+    const records: AttendanceRecord[] = [];
+    for (const date of dates) {
+      for (const participant of uniqueParticipants) {
+        // Verifica se já existe um registro para esta combinação
+        const existing = await this.attendanceRepository.findOne({
+          where: {
+            booking_id: booking.id,
+            email: participant.email,
+            attendance_date: date,
+          },
+        });
+
+        // Se não existir, cria um novo registro pendente
+        if (!existing) {
+          const record = this.attendanceRepository.create({
+            booking_id: booking.id,
+            email: participant.email,
+            full_name: participant.fullName,
+            status: 'Pendente',
+            is_visitor: participant.isVisitor,
+            attendance_date: date,
+          });
+          records.push(record);
+        }
+      }
+    }
+
+    // 6. Salva todos os registros de uma vez
+    if (records.length > 0) {
+      await this.attendanceRepository.save(records);
+      console.log(`[INFO] Criados ${records.length} registros de presença pendentes para o agendamento ${booking.id}`);
+    }
+  }
+
   // --- MÉTODOS DE GERENCIAMENTO DE AGENDAMENTOS ---
 
   // GET /api/admin/bookings
@@ -251,6 +326,9 @@ export class AdminService {
     booking.rejection_reason = null;
 
     const savedBooking = await this.bookingRepository.save(booking);
+
+    // Cria registros de presença pendentes para todos os participantes
+    await this.createPendingAttendanceRecords(savedBooking);
 
     // Envia e-mails de forma assíncrona (sem await) para não bloquear a resposta
     this.sendApprovalEmailsAsync(savedBooking).catch((error) => {
@@ -443,6 +521,9 @@ export class AdminService {
     booking.rejection_reason = null;
 
     const savedApprovedBooking = await this.bookingRepository.save(booking);
+
+    // Cria registros de presença pendentes para o agendamento aprovado
+    await this.createPendingAttendanceRecords(savedApprovedBooking);
 
     // 3. Criar Entidade Clone (Rejeitada)
     // Clona o objeto excluindo o ID para gerar um novo
@@ -710,7 +791,6 @@ export class AdminService {
     }
     this.checkPermission(booking, user);
 
-    const now = new Date();
     const dates = booking.dates || [];
     const sortedDates = [...dates].sort();
 
@@ -722,7 +802,7 @@ export class AdminService {
       attendanceByDate[dateStr] = [];
     }
 
-    // Agrupa os registros de presença por data
+    // Consome APENAS os registros da tabela attendance_records
     const attendanceRecords = booking.attendance_records || [];
     for (const record of attendanceRecords) {
       const recordDate = record.attendance_date;
@@ -766,81 +846,6 @@ export class AdminService {
           status: record.status,
           attendanceDate: singleDate,
         });
-      }
-    }
-
-    // Para cada data, adiciona participantes que ainda não confirmaram
-    for (const dateStr of sortedDates) {
-      const dateIndex = dates.indexOf(dateStr);
-      const [year, month, day] = dateStr.split('-').map(Number);
-
-      // Calcula o horário de término para esta data específica
-      const horaFimStr = Array.isArray(booking.hora_fim)
-        ? booking.hora_fim[dateIndex] || booking.hora_fim[booking.hora_fim.length - 1]
-        : booking.hora_fim;
-
-      if (!horaFimStr) {
-        console.error('[ERROR] Horário de término não encontrado para a data:', dateStr);
-        continue; // Pula esta data se não tiver horário
-      }
-
-      const [hour, minute] = horaFimStr.split(':').map(Number);
-      const bookingEndTime = new Date(year, month - 1, day, hour, minute);
-
-      // Lista de emails que já confirmaram para esta data
-      const confirmedEmailsForDate = attendanceByDate[dateStr].map((a) => a.email);
-
-      // Busca nomes dos participantes SEGET que ainda não confirmaram para esta data
-      const pendingSegetEmails = (booking.participantes || []).filter(
-        (email) => !confirmedEmailsForDate.includes(email.toLowerCase()),
-      );
-      const participantsWithNames =
-        await this.getParticipantsWithNames(pendingSegetEmails);
-      const emailToName = new Map(
-        participantsWithNames.map((p) => [p.email.toLowerCase(), p.name]),
-      );
-
-      // Adiciona participantes SEGET pendentes (não confirmaram) para esta data
-      for (const email of pendingSegetEmails) {
-        let status = 'Pendente';
-        if (now > bookingEndTime) {
-          status = 'Não Confirmado';
-        }
-
-        const participantName = emailToName.get(email.toLowerCase()) || email;
-
-        attendanceByDate[dateStr].push({
-          id: null,
-          fullName: participantName,
-          email: email,
-          confirmedAt: null,
-          confirmedTime: null,
-          isVisitor: false,
-          status: status,
-          attendanceDate: dateStr,
-        });
-      }
-
-      // Adiciona participantes externos pendentes (não confirmaram) para esta data
-      const externalParticipants = booking.external_participants || [];
-      for (const external of externalParticipants) {
-        if (!confirmedEmailsForDate.includes(external.email.toLowerCase())) {
-          let status = 'Pendente';
-          if (now > bookingEndTime) {
-            status = 'Não Confirmado';
-          }
-
-          attendanceByDate[dateStr].push({
-            id: null,
-            fullName: external.full_name,
-            email: external.email,
-            confirmedAt: null,
-            confirmedTime: null,
-            isVisitor: true,
-            status: status,
-            attendanceDate: dateStr,
-          });
-        }
       }
     }
 

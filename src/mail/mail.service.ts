@@ -57,7 +57,7 @@ function formatPhone(phone: string): string {
 
 @Injectable()
 export class MailService {
-  constructor(private readonly mailerService: MailerService) {}
+  constructor(private readonly mailerService: MailerService) { }
 
   // Gera o template base do e-mail estilizado
   private generateEmailTemplate(
@@ -103,14 +103,13 @@ export class MailService {
                   <td style="padding: 0 12px;">
                     <img src="${segetLogoUrl}" alt="SEGET Logo" height="50" style="display: block; height: 50px; width: auto; border: 0;" />
                   </td>
-                  ${
-                    roomLogoUrl
-                      ? `
+                  ${roomLogoUrl
+        ? `
                   <td style="padding: 0 12px; border-left: 1px solid #e5e7eb;">
                     <img src="${roomLogoUrl}" alt="Logo da Sala" height="50" style="display: block; height: 50px; width: auto; border: 0;" />
                   </td>`
-                      : ''
-                  }
+        : ''
+      }
                 </tr>
               </table>
               <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">
@@ -230,9 +229,8 @@ export class MailService {
               <span style="color: ${roomColor}; font-size: 15px; font-weight: 600;">${getRoomLabel(booking.room_name)}</span>
             </td>
           </tr>
-          ${
-            booking.tipo_reserva
-              ? `
+          ${booking.tipo_reserva
+        ? `
           <tr>
             <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
               <span style="color: #6b7280; font-size: 13px;">Tipo de Reserva</span><br>
@@ -240,11 +238,10 @@ export class MailService {
             </td>
           </tr>
           `
-              : ''
-          }
-          ${
-            booking.local
-              ? `
+        : ''
+      }
+          ${booking.local
+        ? `
           <tr>
             <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
               <span style="color: #6b7280; font-size: 13px;">Local do Evento</span><br>
@@ -252,8 +249,8 @@ export class MailService {
             </td>
           </tr>
           `
-              : ''
-          }
+        : ''
+      }
           <tr>
             <td style="padding: 12px 16px; border-bottom: 1px solid #e5e7eb;">
               <span style="color: #6b7280; font-size: 13px;">Data(s)</span><br>
@@ -263,16 +260,15 @@ export class MailService {
           <tr>
             <td style="padding: 12px 16px;">
               <span style="color: #6b7280; font-size: 13px;">Horário(s)</span><br>
-              ${
-                booking.hora_inicio.length === 1
-                  ? `<span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.hora_inicio[0]} às ${booking.hora_fim[0]}</span>`
-                  : booking.hora_inicio
-                      .map(
-                        (inicio, i) =>
-                          `<span style="display: block; color: #111827; font-size: 15px; font-weight: 500; margin: 2px 0;">📅 ${formatDate(booking.dates[i])}: ${inicio} às ${booking.hora_fim[i]}</span>`,
-                      )
-                      .join('')
-              }
+              ${booking.hora_inicio.length === 1
+        ? `<span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.hora_inicio[0]} às ${booking.hora_fim[0]}</span>`
+        : booking.hora_inicio
+          .map(
+            (inicio, i) =>
+              `<span style="display: block; color: #111827; font-size: 15px; font-weight: 500; margin: 2px 0;">📅 ${formatDate(booking.dates[i])}: ${inicio} às ${booking.hora_fim[i]}</span>`,
+          )
+          .join('')
+      }
             </td>
           </tr>
         </table>
@@ -298,9 +294,8 @@ export class MailService {
               <span style="color: #111827; font-size: 15px; font-weight: 500;">${booking.descricao}</span>
             </td>
           </tr>
-          ${
-            booking.observacao
-              ? `
+          ${booking.observacao
+        ? `
           <tr>
             <td style="padding: 12px 16px; border-top: 1px solid #e5e7eb;">
               <span style="color: #6b7280; font-size: 13px;">Observações</span><br>
@@ -308,8 +303,8 @@ export class MailService {
             </td>
           </tr>
           `
-              : ''
-          }
+        : ''
+      }
         </table>
       </div>
     `;
@@ -330,14 +325,14 @@ export class MailService {
           </h2>
           <div style="background-color: #f9fafb; border-radius: 12px; padding: 16px;">
             ${equipamentos
-              .map(
-                (eq) => `
+          .map(
+            (eq) => `
               <span style="display: inline-block; margin: 4px; padding: 6px 12px; background-color: #e5e7eb; border-radius: 20px; font-size: 13px; color: #374151;">
                 ✓ ${eq}
               </span>
             `,
-              )
-              .join('')}
+          )
+          .join('')}
           </div>
         </div>
       `;
@@ -366,16 +361,16 @@ export class MailService {
           </h2>
           <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f9fafb; border-radius: 12px; overflow: hidden;">
             ${especificos
-              .map(
-                (item, index) => `
+          .map(
+            (item, index) => `
               <tr>
                 <td style="padding: 12px 16px; ${index < especificos.length - 1 ? 'border-bottom: 1px solid #e5e7eb;' : ''}">
                   <span style="color: #111827; font-size: 15px; font-weight: 500;">• ${item}</span>
                 </td>
               </tr>
             `,
-              )
-              .join('')}
+          )
+          .join('')}
           </table>
         </div>
       `;
@@ -390,14 +385,14 @@ export class MailService {
           </h2>
           <div style="background-color: #f9fafb; border-radius: 12px; padding: 16px;">
             ${booking.participantes
-              .map(
-                (p) => `
+          .map(
+            (p) => `
               <div style="margin: 4px 0; padding: 8px 12px; background-color: #ffffff; border-radius: 8px; font-size: 14px; color: #374151; border: 1px solid #e5e7eb;">
                 📧 ${p}
               </div>
             `,
-              )
-              .join('')}
+          )
+          .join('')}
           </div>
         </div>
       `;
@@ -568,15 +563,14 @@ export class MailService {
         </p>
       </div>
 
-      ${
-        booking.observacao_admin
-          ? `
+      ${booking.observacao_admin
+        ? `
       <div style="margin-bottom: 24px; padding: 16px; background-color: #f0fdf4; border-radius: 12px; border-left: 4px solid #10b981;">
         <p style="margin: 0 0 8px; color: #065f46; font-size: 13px; font-weight: 600;">💬 Mensagem da Administração:</p>
         <p style="margin: 0; color: #065f46; font-size: 14px;">${booking.observacao_admin}</p>
       </div>
       `
-          : ''
+        : ''
       }
 
       <div style="margin-bottom: 24px;">
@@ -765,15 +759,14 @@ export class MailService {
         </p>
       </div>
 
-      ${
-        booking.rejection_reason
-          ? `
+      ${booking.rejection_reason
+        ? `
       <div style="margin-bottom: 24px; padding: 16px; background-color: #fee2e2; border-radius: 12px; border-left: 4px solid #ef4444;">
         <p style="margin: 0 0 8px; color: #991b1b; font-size: 13px; font-weight: 600;">📝 Motivo da Rejeição:</p>
         <p style="margin: 0; color: #991b1b; font-size: 14px;">${booking.rejection_reason}</p>
       </div>
       `
-          : ''
+        : ''
       }
 
       ${this.generateBookingInfoSection(booking, false)}
@@ -819,15 +812,14 @@ export class MailService {
         </p>
       </div>
 
-      ${
-        booking.observacao_admin
-          ? `
+      ${booking.observacao_admin
+        ? `
       <div style="margin-bottom: 24px; padding: 16px; background-color: #dbeafe; border-radius: 12px; border-left: 4px solid #3b82f6;">
         <p style="margin: 0 0 8px; color: #1e40af; font-size: 13px; font-weight: 600;">💬 Observação da Administração:</p>
         <p style="margin: 0; color: #1e40af; font-size: 14px;">${booking.observacao_admin}</p>
       </div>
       `
-          : ''
+        : ''
       }
 
       ${this.generateBookingInfoSection(booking, false)}
@@ -872,15 +864,14 @@ export class MailService {
         </p>
       </div>
 
-      ${
-        booking.observacao_admin
-          ? `
+      ${booking.observacao_admin
+        ? `
       <div style="margin-bottom: 24px; padding: 16px; background-color: #fef3c7; border-radius: 12px; border-left: 4px solid #f59e0b;">
         <p style="margin: 0 0 8px; color: #92400e; font-size: 13px; font-weight: 600;">💬 Observação da Administração:</p>
         <p style="margin: 0; color: #92400e; font-size: 14px;">${booking.observacao_admin}</p>
       </div>
       `
-          : ''
+        : ''
       }
 
       ${this.generateBookingInfoSection(booking, false)}
@@ -954,16 +945,6 @@ export class MailService {
       to: adminEmail, // TODO: Buscar e-mail do admin da sala
       subject: `Novo Agendamento Pendente: ${getRoomLabel(booking.room_name)}`,
       html: `Um novo agendamento foi solicitado por ${booking.nome_completo} para a sala ${getRoomLabel(booking.room_name)}.`,
-    });
-  }
-
-  async sendAttendanceLink(booking: Booking, participantEmail: string) {
-    const confirmationUrl = `http://SEU-FRONT-END.com/confirmar/${booking.id}`;
-    await this.mailerService.sendMail({
-      to: participantEmail,
-      subject: `Confirme sua presença: ${booking.finalidade}`,
-      html: `Você foi convidado para o evento ${booking.finalidade}.
-                <br>Por favor, confirme sua presença: <a href="${confirmationUrl}">Confirmar Presença</a>`,
     });
   }
 
@@ -1064,16 +1045,15 @@ export class MailService {
             </td>
             <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5; width: 50%;">
               <span style="color: #065f46; font-size: 13px;">🕐 HORÁRIO(S)</span><br>
-              ${
-                booking.hora_inicio.length === 1
-                  ? `<span style="color: #065f46; font-size: 15px; font-weight: 600;">${booking.hora_inicio[0]} às ${booking.hora_fim[0]}</span>`
-                  : booking.hora_inicio
-                      .map(
-                        (inicio, i) =>
-                          `<span style="display: block; color: #065f46; font-size: 14px; font-weight: 500; margin: 2px 0;">${formatDate(booking.dates[i])}: ${inicio} às ${booking.hora_fim[i]}</span>`,
-                      )
-                      .join('')
-              }
+              ${booking.hora_inicio.length === 1
+        ? `<span style="color: #065f46; font-size: 15px; font-weight: 600;">${booking.hora_inicio[0]} às ${booking.hora_fim[0]}</span>`
+        : booking.hora_inicio
+          .map(
+            (inicio, i) =>
+              `<span style="display: block; color: #065f46; font-size: 14px; font-weight: 500; margin: 2px 0;">${formatDate(booking.dates[i])}: ${inicio} às ${booking.hora_fim[i]}</span>`,
+          )
+          .join('')
+      }
             </td>
           </tr>
           <tr>
