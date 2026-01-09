@@ -20,7 +20,7 @@ export class TasksService {
     private readonly configService: ConfigService,
   ) { }
 
-  @Cron('0 8-17 * * *', {
+  @Cron('*/5 8-17 * * *', {
     timeZone: 'America/Sao_Paulo',
   })
   async handleCron() {
@@ -28,21 +28,27 @@ export class TasksService {
       'Verificando agendamentos para envio de confirmação de presença...',
     );
 
-    // 1. Definições de Data e Hora Atuais
-    const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinutes = now.getMinutes();
+    const initialNow = new Date();
+    const currentHour = initialNow.getHours();
+    const currentMinutes = initialNow.getMinutes();
 
     // Formato YYYY-MM-DD para comparar com o array 'dates' do banco
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = initialNow.toISOString().split('T')[0];
 
     this.logger.log(
       `Hora atual: ${currentHour}:${currentMinutes.toString().padStart(2, '0')} - Verificando agendamentos para hoje (${todayStr})`,
     );
 
     // Obter URL do front para o QR Code (definir no .env ou usar valor padrão)
+    const configuredFrontendUrl = this.configService.get<string>('FRONTEND_URL');
     const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') || 'http://agendamento.segetmarica.cloud';
+      configuredFrontendUrl || 'http://agendamento.segetmarica.cloud';
+
+    if (!configuredFrontendUrl) {
+      this.logger.warn(
+        'FRONTEND_URL não configurada. Usando valor padrão http://agendamento.segetmarica.cloud',
+      );
+    }
 
     // 2. Busca Otimizada:
     // Pega apenas agendamentos APROVADOS e que CONTENHAM a data de hoje na string.
@@ -59,19 +65,46 @@ export class TasksService {
       return;
     }
 
-    this.logger.log(
-      `Encontrados ${bookingsHoje.length} agendamentos para hoje (${todayStr}). Analisando horários...`,
+    const validBookings = bookingsHoje.filter(
+      (booking) => Array.isArray(booking.dates) && booking.dates.includes(todayStr),
     );
 
-    for (const booking of bookingsHoje) {
+    if (validBookings.length === 0) {
+      this.logger.log('Nenhum agendamento válido para envio encontrado após filtragem.');
+      return;
+    }
+
+    this.logger.log(
+      `Encontrados ${validBookings.length} agendamentos para hoje (${todayStr}). Analisando horários...`,
+    );
+
+    let sentCounter = 0;
+    let skippedCounter = 0;
+
+    for (const booking of validBookings) {
       try {
-        // Inicializa o array de controle se estiver nulo
-        if (!booking.confirmation_emails_sent) {
-          booking.confirmation_emails_sent = [];
-        }
+        const now = new Date();
+
+        const rawConfirmationSent = (booking.confirmation_emails_sent ?? null) as
+          | string[]
+          | null;
+
+        const confirmationSentDates = Array.isArray(rawConfirmationSent)
+          ? rawConfirmationSent.filter(Boolean)
+          : rawConfirmationSent
+            ? String(rawConfirmationSent)
+              .split(',')
+              .map((value) => value.trim())
+              .filter(Boolean)
+            : [];
+
+        booking.confirmation_emails_sent = confirmationSentDates;
+
+        const alreadySentForToday = confirmationSentDates.includes(todayStr);
 
         // Se já enviamos email para a data de hoje neste agendamento, pula
-        if (booking.confirmation_emails_sent.includes(todayStr)) {
+        if (alreadySentForToday) {
+          skippedCounter++;
           continue;
         }
 
@@ -79,12 +112,17 @@ export class TasksService {
         const dateIndex = booking.dates.indexOf(todayStr);
         if (dateIndex === -1) continue; // Segurança
 
+        const horaInicioList = Array.isArray(booking.hora_inicio)
+          ? booking.hora_inicio
+          : [booking.hora_inicio].filter(Boolean);
+        const horaFimList = Array.isArray(booking.hora_fim)
+          ? booking.hora_fim
+          : [booking.hora_fim].filter(Boolean);
+
         // Pega o horário de início correspondente ao dia de hoje
         // Se o array de horas for menor que o de dias, usa o primeiro (lógica comum de repetição)
-        const horaInicioStr =
-          booking.hora_inicio[dateIndex] || booking.hora_inicio[0];
-        const horaFimStr =
-          booking.hora_fim[dateIndex] || booking.hora_fim[0];
+        const horaInicioStr = horaInicioList[dateIndex] || horaInicioList[0];
+        const horaFimStr = horaFimList[dateIndex] || horaFimList[0];
 
         // Converter horaInicioStr ("08:00") para objeto Date hoje
         const [h, m] = horaInicioStr.split(':').map(Number);
@@ -96,43 +134,61 @@ export class TasksService {
         const dataFimEvento = new Date();
         dataFimEvento.setHours(hFim, mFim, 0, 0);
 
-        // 4. Regra de Negócio: Enviar se o evento JÁ COMEÇOU e AINDA NÃO TERMINOU
-        // Exemplo: Evento 8:00-9:00, agora são 8:30 -> Envia
-        // Exemplo: Evento 8:00-9:00, agora são 9:05 -> NÃO envia (já terminou)
-        // Exemplo: Evento 8:00-9:00, agora são 7:50 -> NÃO envia (ainda não começou)
+        // 4. Regra de Negócio: Enviar se o evento JÁ COMEÇOU e ainda está dentro da janela de envio (máx. 60 minutos)
         const agoraTimestamp = now.getTime();
         const inicioTimestamp = dataInicioEvento.getTime();
         const fimTimestamp = dataFimEvento.getTime();
+        const limiteEnvioTimestamp = Math.min(
+          fimTimestamp,
+          inicioTimestamp + 60 * 60 * 1000,
+        );
 
-        // Verifica se estamos DENTRO do período do agendamento
-        if (agoraTimestamp >= inicioTimestamp && agoraTimestamp <= fimTimestamp) {
+        // Verifica se estamos dentro da janela do agendamento e da margem de 60 minutos
+        if (agoraTimestamp >= inicioTimestamp && agoraTimestamp <= limiteEnvioTimestamp) {
           this.logger.log(
             `Enviando emails para agendamento ${booking.id} - Sala ${booking.room_name} (${horaInicioStr}-${horaFimStr})`,
           );
 
-          // A. Enviar para o Solicitante
-          await this.mailService.sendAttendanceConfirmationWithPDF(
-            booking,
-            booking.email,
-            booking.nome_completo,
-            frontendUrl,
-            true, // isRequester
-            todayStr, // specificDate
-          );
+          const deliverEmail = async (
+            recipientEmail: string | null | undefined,
+            recipientName: string | null,
+            isRequester: boolean,
+          ) => {
+            if (!recipientEmail) {
+              this.logger.warn(
+                `Email não enviado para o agendamento ${booking.id} por ausência de destinatário válido.`,
+              );
+              return;
+            }
 
-          // B. Enviar para Participantes Internos (SEGET)
-          // Assumindo que booking.participantes é array de emails
-          if (booking.participantes && booking.participantes.length > 0) {
-            for (const emailPart of booking.participantes) {
+            try {
               await this.mailService.sendAttendanceConfirmationWithPDF(
                 booking,
-                emailPart,
-                null, // Nome será extraído do email no service
+                recipientEmail,
+                recipientName,
                 frontendUrl,
-                false,
+                isRequester,
                 todayStr,
               );
+            } catch (error) {
+              this.logger.error(
+                `Falha ao enviar email de confirmação (${recipientEmail}) para o agendamento ${booking.id}: ${error.message}`,
+                error.stack,
+              );
+              throw error;
             }
+          };
+
+          // A. Enviar para o Solicitante
+          await deliverEmail(booking.email, booking.nome_completo, true);
+
+          // B. Enviar para Participantes Internos (SEGET)
+          const participantesInternos = Array.isArray(booking.participantes)
+            ? booking.participantes.filter(Boolean)
+            : [];
+
+          for (const emailPart of participantesInternos) {
+            await deliverEmail(emailPart, null, false);
           }
 
           // C. Enviar para Participantes Externos
@@ -141,14 +197,7 @@ export class TasksService {
             booking.external_participants.length > 0
           ) {
             for (const extPart of booking.external_participants) {
-              await this.mailService.sendAttendanceConfirmationWithPDF(
-                booking,
-                extPart.email,
-                extPart.full_name,
-                frontendUrl,
-                false,
-                todayStr,
-              );
+              await deliverEmail(extPart.email, extPart.full_name, false);
             }
           }
 
@@ -159,6 +208,9 @@ export class TasksService {
           this.logger.log(
             `Emails enviados e registro atualizado para o agendamento ${booking.id}`,
           );
+          sentCounter++;
+        } else {
+          skippedCounter++;
         }
       } catch (error) {
         this.logger.error(
@@ -167,6 +219,10 @@ export class TasksService {
         );
       }
     }
+
+    this.logger.log(
+      `Processamento concluído: ${sentCounter} agendamentos com email enviado, ${skippedCounter} agendamentos ignorados nesta execução.`,
+    );
   }
 
   // Cron job para marcar registros pendentes como "Não Confirmado" após o prazo
