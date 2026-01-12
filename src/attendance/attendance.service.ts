@@ -12,6 +12,11 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ConfirmAttendanceDto } from './dto/confirm-attendance.dto';
 import { MailService } from 'src/mail/mail.service';
 
+type AttendanceEmailInfo = {
+  fullName: string;
+  isVisitor: boolean;
+};
+
 @Injectable()
 export class AttendanceService {
   constructor(
@@ -24,9 +29,40 @@ export class AttendanceService {
     private readonly mailService: MailService,
   ) { }
 
+  private normalizeEmail(email?: string | null): string | null {
+    return email ? email.toLowerCase().trim() : null;
+  }
+
+  private async getAttendanceEmailMap(
+    bookingId: string,
+  ): Promise<Map<string, AttendanceEmailInfo>> {
+    const records = await this.attendanceRepository.find({
+      where: { booking_id: bookingId },
+      select: ['email', 'full_name', 'is_visitor'],
+    });
+
+    const map = new Map<string, AttendanceEmailInfo>();
+
+    for (const record of records) {
+      const normalizedEmail = this.normalizeEmail(record.email);
+      if (!normalizedEmail) continue;
+
+      map.set(normalizedEmail, {
+        fullName: record.full_name,
+        isVisitor: record.is_visitor,
+      });
+    }
+
+    return map;
+  }
+
   async verifyEmail(verifyEmailDto: VerifyEmailDto) {
     const { email, bookingId } = verifyEmailDto;
-    const verifyingEmail = email.toLowerCase().trim();
+    const verifyingEmail = this.normalizeEmail(email);
+
+    if (!verifyingEmail) {
+      throw new BadRequestException('E-mail inválido.');
+    }
 
     // 1. Busca o agendamento com participantes externos
     const booking = await this.bookingRepository.findOne({
@@ -41,35 +77,46 @@ export class AttendanceService {
     }
 
     // 2. Email do solicitante do agendamento
-    const solicitanteEmail = booking.email?.toLowerCase().trim();
+    const solicitanteEmail = this.normalizeEmail(booking.email);
 
     // 3. Participantes SEGET - o campo 'participantes' já contém emails
-    const participantEmails = (booking.participantes || []).map((e) =>
-      e.toLowerCase().trim(),
-    );
+    const participantEmails = (booking.participantes || [])
+      .map((participantEmail) => this.normalizeEmail(participantEmail))
+      .filter((value): value is string => Boolean(value));
 
     // 4. Busca emails dos participantes externos
     const externalEmails =
-      booking.external_participants?.map((p) => p.email.toLowerCase().trim()) || [];
+      booking.external_participants
+        ?.map((participant) => this.normalizeEmail(participant.email))
+        .filter((value): value is string => Boolean(value)) || [];
 
-    // 5. Combina todos os emails permitidos (solicitante + participantes SEGET + externos)
-    const allowedEmails = [
-      solicitanteEmail,
-      ...participantEmails,
-      ...externalEmails,
-    ].filter(Boolean); // Remove valores nulos/undefined
+    // 5. Busca emails já existentes em registros de presença
+    const attendanceEmailMap = await this.getAttendanceEmailMap(bookingId);
+
+    // 6. Combina todos os emails permitidos eliminando duplicatas
+    const allowedEmailsSet = new Set<string>();
+    if (solicitanteEmail) allowedEmailsSet.add(solicitanteEmail);
+    participantEmails.forEach((participantEmail) =>
+      allowedEmailsSet.add(participantEmail),
+    );
+    externalEmails.forEach((externalEmail) =>
+      allowedEmailsSet.add(externalEmail),
+    );
+    for (const attendanceEmail of attendanceEmailMap.keys()) {
+      allowedEmailsSet.add(attendanceEmail);
+    }
 
     console.log('Email verificando:', verifyingEmail);
-    console.log('Emails permitidos:', allowedEmails);
+    console.log('Emails permitidos:', Array.from(allowedEmailsSet));
 
-    // 6. Valida se o email está na lista de permitidos
-    if (!allowedEmails.includes(verifyingEmail)) {
+    // 7. Valida se o email está na lista de permitidos
+    if (!allowedEmailsSet.has(verifyingEmail)) {
       throw new BadRequestException(
         'E-mail não cadastrado na base de participantes deste agendamento. Por favor, dirija-se ao RH para atualizar seu e-mail.',
       );
     }
 
-    // 7. Se é o solicitante do agendamento
+    // 8. Se é o solicitante do agendamento
     if (verifyingEmail === solicitanteEmail) {
       return {
         exists: true,
@@ -80,7 +127,7 @@ export class AttendanceService {
       };
     }
 
-    // 8. Verifica se o email existe na tabela de employees
+    // 9. Verifica se o email existe na tabela de employees
     const employee = await this.employeeRepository.findOneBy({
       email: verifyingEmail,
     });
@@ -96,9 +143,9 @@ export class AttendanceService {
       };
     }
 
-    // 9. Se não é employee, busca nos participantes externos
+    // 10. Se não é employee, busca nos participantes externos
     const externalParticipant = booking.external_participants?.find(
-      (p) => p.email.toLowerCase().trim() === verifyingEmail,
+      (participant) => this.normalizeEmail(participant.email) === verifyingEmail,
     );
 
     if (externalParticipant) {
@@ -111,7 +158,19 @@ export class AttendanceService {
       };
     }
 
-    // 10. Fallback - email está na lista de participantes mas não encontrado em employees/externos
+    // 11. Fallback utilizando registro de presença pré-existente
+    const attendanceInfo = attendanceEmailMap.get(verifyingEmail);
+    if (attendanceInfo) {
+      return {
+        exists: true,
+        userData: {
+          name: attendanceInfo.fullName || '',
+          isEmployee: !attendanceInfo.isVisitor,
+        },
+      };
+    }
+
+    // 12. Fallback - email está na lista de participantes mas não encontrado em employees/externos
     // Isso pode acontecer se o email foi adicionado manualmente na lista de participantes
     return {
       exists: true,
@@ -124,6 +183,11 @@ export class AttendanceService {
 
   async confirmAttendance(confirmDto: ConfirmAttendanceDto) {
     const { bookingId, email, fullName, status, date } = confirmDto;
+    const verifyingEmail = this.normalizeEmail(email);
+
+    if (!verifyingEmail) {
+      throw new BadRequestException('E-mail inválido.');
+    }
 
     const booking = await this.bookingRepository.findOne({
       where: { id: bookingId, status: 'approved' },
@@ -136,30 +200,39 @@ export class AttendanceService {
     }
 
     // Validação: o email deve estar na lista de participantes SEGET, externos ou ser o solicitante
-    const verifyingEmail = email.toLowerCase().trim();
-
     // Email do solicitante
-    const solicitanteEmail = booking.email?.toLowerCase().trim();
+    const solicitanteEmail = this.normalizeEmail(booking.email);
 
     // Participantes SEGET - o campo 'participantes' já contém emails (não IDs)
-    const participantEmails = (booking.participantes || []).map((e) =>
-      e.toLowerCase().trim(),
-    );
+    const participantEmails = (booking.participantes || [])
+      .map((participantEmail) => this.normalizeEmail(participantEmail))
+      .filter((value): value is string => Boolean(value));
 
     // Participantes externos
     const externalEmails =
-      booking.external_participants?.map((p) => p.email.toLowerCase().trim()) || [];
+      booking.external_participants
+        ?.map((participant) => this.normalizeEmail(participant.email))
+        .filter((value): value is string => Boolean(value)) || [];
+
+    // Emails existentes em registros de presença
+    const attendanceEmailMap = await this.getAttendanceEmailMap(bookingId);
 
     // Combina todos os emails permitidos
-    const allowedEmails = [
-      solicitanteEmail,
-      ...participantEmails,
-      ...externalEmails,
-    ].filter(Boolean);
+    const allowedEmailsSet = new Set<string>();
+    if (solicitanteEmail) allowedEmailsSet.add(solicitanteEmail);
+    participantEmails.forEach((participantEmail) =>
+      allowedEmailsSet.add(participantEmail),
+    );
+    externalEmails.forEach((externalEmail) =>
+      allowedEmailsSet.add(externalEmail),
+    );
+    for (const attendanceEmail of attendanceEmailMap.keys()) {
+      allowedEmailsSet.add(attendanceEmail);
+    }
 
-    if (!allowedEmails.includes(verifyingEmail)) {
+    if (!allowedEmailsSet.has(verifyingEmail)) {
       throw new BadRequestException(
-        'E-mail não cadastrado na base de participantes deste agendamento.',
+        'E-mail não cadastrado na base de participantes deste agendamento. Por favor, dirija-se ao RH para atualizar seu e-mail.',
       );
     }
 
@@ -249,13 +322,18 @@ export class AttendanceService {
     }
 
     const employee = await this.employeeRepository.findOneBy({
-      email: email.toLowerCase(),
+      email: verifyingEmail,
     });
+
+    const sanitizedFullName = fullName.trim();
+    const attendanceInfo = attendanceEmailMap.get(verifyingEmail);
+    const derivedIsVisitor =
+      attendanceInfo !== undefined ? attendanceInfo.isVisitor : !employee;
 
     // Busca registro existente para a mesma data
     let existingAttendance = await this.attendanceRepository.findOneBy({
       booking_id: bookingId,
-      email: email.toLowerCase(),
+      email: verifyingEmail,
       attendance_date: attendanceDate,
     });
 
@@ -265,8 +343,8 @@ export class AttendanceService {
       // Se já existe um registro mas ainda está pendente, atualiza
       if (existingAttendance.status === 'Pendente') {
         existingAttendance.status = status;
-        existingAttendance.full_name = fullName;
-        existingAttendance.is_visitor = !employee;
+        existingAttendance.full_name = sanitizedFullName;
+        existingAttendance.is_visitor = derivedIsVisitor;
         existingAttendance.confirmed_at = new Date();
         savedRecord = await this.attendanceRepository.save(existingAttendance);
       } else {
@@ -281,10 +359,10 @@ export class AttendanceService {
       // Se não existe registro (caso antigo ou erro), cria um novo
       const attendance = this.attendanceRepository.create({
         booking_id: bookingId,
-        email: email.toLowerCase(),
-        full_name: fullName,
+        email: verifyingEmail,
+        full_name: sanitizedFullName,
         status: status,
-        is_visitor: !employee,
+        is_visitor: derivedIsVisitor,
         attendance_date: attendanceDate,
         confirmed_at: new Date(),
       });
