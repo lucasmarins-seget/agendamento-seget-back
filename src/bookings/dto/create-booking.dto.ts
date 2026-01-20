@@ -83,8 +83,19 @@ export class CreateBookingDto {
   horaFim: string[];
 
   @IsArray()
+  @ArrayMinSize(1)
   @IsEmail({}, { each: true })
-  @IsNotEmpty()
+  @Transform(({ value }) => {
+    if (!Array.isArray(value)) {
+      return value;
+    }
+
+    return value
+      .map((email) =>
+        typeof email === 'string' ? email.trim().toLowerCase() : email,
+      )
+      .filter((email) => typeof email === 'string' && email.length > 0);
+  }, { toClassOnly: true })
   participantes: string[];
 
   @IsArray()
