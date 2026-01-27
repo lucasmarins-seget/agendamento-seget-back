@@ -10,6 +10,8 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
+  private sendingPausedUntil: Date | null = null;
+  private readonly emailSendDelayMs: number;
 
   constructor(
     @InjectRepository(Booking)
@@ -18,7 +20,42 @@ export class TasksService {
     private readonly attendanceRepository: Repository<AttendanceRecord>,
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
-  ) { }
+  ) {
+    const configuredDelay = Number(
+      this.configService.get<string>('EMAIL_SEND_DELAY_MS') ?? 300,
+    );
+    this.emailSendDelayMs = Number.isFinite(configuredDelay)
+      ? Math.max(0, configuredDelay)
+      : 300;
+  }
+
+  private async delay(ms: number) {
+    if (ms > 0) {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    }
+  }
+
+  private isDailyLimitError(error: unknown): boolean {
+    const anyError = error as { responseCode?: number; message?: string } | undefined;
+    const message = anyError?.message || '';
+    return (
+      anyError?.responseCode === 550 &&
+      message.includes('Daily user sending limit exceeded')
+    );
+  }
+
+  private shouldPauseSending(): boolean {
+    if (!this.sendingPausedUntil) return false;
+    return new Date() < this.sendingPausedUntil;
+  }
+
+  private setPause(minutes: number) {
+    const until = new Date(Date.now() + minutes * 60 * 1000);
+    this.sendingPausedUntil = until;
+    this.logger.warn(
+      `Envio de e-mails pausado até ${until.toISOString()} devido a limite do provedor.`,
+    );
+  }
 
   @Cron('*/5 8-17 * * *', {
     timeZone: 'America/Sao_Paulo',
@@ -27,6 +64,13 @@ export class TasksService {
     this.logger.log(
       'Verificando agendamentos para envio de confirmação de presença...',
     );
+
+    if (this.shouldPauseSending()) {
+      this.logger.warn(
+        'Envio de e-mails pausado por limite do provedor. Ignorando execução atual.',
+      );
+      return;
+    }
 
     const initialNow = new Date();
     const currentHour = initialNow.getHours();
@@ -82,6 +126,12 @@ export class TasksService {
     let skippedCounter = 0;
 
     for (const booking of validBookings) {
+      if (this.shouldPauseSending()) {
+        this.logger.warn(
+          'Envio de e-mails pausado por limite do provedor. Interrompendo processamento desta execução.',
+        );
+        break;
+      }
       try {
         const now = new Date();
 
@@ -149,6 +199,10 @@ export class TasksService {
             `Enviando emails para agendamento ${booking.id} - Sala ${booking.room_name} (${horaInicioStr}-${horaFimStr})`,
           );
 
+          let anySent = false;
+          let anyFailed = false;
+          let stopSending = false;
+
           const deliverEmail = async (
             recipientEmail: string | null | undefined,
             recipientName: string | null,
@@ -158,7 +212,7 @@ export class TasksService {
               this.logger.warn(
                 `Email não enviado para o agendamento ${booking.id} por ausência de destinatário válido.`,
               );
-              return;
+              return { sent: false, skipped: true };
             }
 
             try {
@@ -170,17 +224,31 @@ export class TasksService {
                 isRequester,
                 todayStr,
               );
+              anySent = true;
+              return { sent: true };
             } catch (error) {
               this.logger.error(
                 `Falha ao enviar email de confirmação (${recipientEmail}) para o agendamento ${booking.id}: ${error.message}`,
                 error.stack,
               );
-              throw error;
+              anyFailed = true;
+              if (this.isDailyLimitError(error)) {
+                this.setPause(60);
+                stopSending = true;
+              }
+              return { sent: false, error };
+            } finally {
+              await this.delay(this.emailSendDelayMs);
             }
           };
 
           // A. Enviar para o Solicitante
           await deliverEmail(booking.email, booking.nome_completo, true);
+
+          if (stopSending) {
+            skippedCounter++;
+            continue;
+          }
 
           // B. Enviar para Participantes Internos (SEGET)
           const participantesInternos = Array.isArray(booking.participantes)
@@ -189,6 +257,12 @@ export class TasksService {
 
           for (const emailPart of participantesInternos) {
             await deliverEmail(emailPart, null, false);
+            if (stopSending) break;
+          }
+
+          if (stopSending) {
+            skippedCounter++;
+            continue;
           }
 
           // C. Enviar para Participantes Externos
@@ -198,17 +272,25 @@ export class TasksService {
           ) {
             for (const extPart of booking.external_participants) {
               await deliverEmail(extPart.email, extPart.full_name, false);
+              if (stopSending) break;
             }
           }
 
-          // 5. Atualizar o banco para não enviar de novo HOJE
-          booking.confirmation_emails_sent.push(todayStr);
-          await this.bookingRepository.save(booking);
+          if (anySent) {
+            // 5. Atualizar o banco para não enviar de novo HOJE
+            booking.confirmation_emails_sent.push(todayStr);
+            await this.bookingRepository.save(booking);
 
-          this.logger.log(
-            `Emails enviados e registro atualizado para o agendamento ${booking.id}`,
-          );
-          sentCounter++;
+            this.logger.log(
+              `Emails enviados e registro atualizado para o agendamento ${booking.id}`,
+            );
+            sentCounter++;
+          } else if (anyFailed) {
+            this.logger.warn(
+              `Nenhum email enviado para o agendamento ${booking.id}. Será tentado novamente mais tarde.`,
+            );
+            skippedCounter++;
+          }
         } else {
           skippedCounter++;
         }
