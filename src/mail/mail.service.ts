@@ -59,6 +59,233 @@ function formatPhone(phone: string): string {
 export class MailService {
   constructor(private readonly mailerService: MailerService) { }
 
+  private buildRecipientFields(recipients: string[] | string): {
+    to: string;
+    cc?: string[];
+  } {
+    const list = Array.isArray(recipients) ? recipients : [recipients];
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+
+    for (const raw of list) {
+      if (!raw) continue;
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      normalized.push(trimmed);
+    }
+
+    if (normalized.length === 0) {
+      throw new Error('No email recipients provided.');
+    }
+
+    const [to, ...cc] = normalized;
+    return cc.length > 0 ? { to, cc } : { to };
+  }
+
+  private buildApprovalEmailForParticipants(booking: Booking): {
+    subject: string;
+    html: string;
+  } {
+    const statusColor = STATUS_COLORS.approved;
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+
+    // Define o local baseado na sala
+    let location: string;
+    if (booking.room_name === 'escola_fazendaria') {
+      location = booking.local || 'Escola Fazendária - SEGET';
+    } else {
+      location = 'Rua Álvares de Castro, 272 - Maricá/RJ';
+    }
+
+    const googleCalendarLink = this.generateGoogleCalendarLink(booking);
+    const formattedDates = booking.dates.map(formatDate).join(', ');
+
+    const content = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
+          Notificação de Evento 📋
+        </h2>
+        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+          Você é participante de um evento na <strong style="color: ${roomColor};">${getRoomLabel(booking.room_name)}</strong>. Leia abaixo informações referentes ao agendamento.
+        </p>
+      </div>
+
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
+          📋 Informações do Evento
+        </h2>
+        <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f0fdf4; border-radius: 12px; overflow: hidden; border: 1px solid #d1fae5;">
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">🏢 Sala</span><br>
+              <span style="color: ${roomColor}; font-size: 15px; font-weight: 600;">${getRoomLabel(booking.room_name)}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">📍 Local</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${location}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">📅 Data(s)</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${formattedDates}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">🕐 Horário</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.hora_inicio} às ${booking.hora_fim}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px;">
+              <span style="color: #065f46; font-size: 13px;">👤 Solicitante</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.nome_completo}</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Botão Google Calendar -->
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${googleCalendarLink}" target="_blank" style="display: inline-block; padding: 14px 32px; background-color: #4285f4; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 600; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">
+          📅 Adicionar ao Google Agenda
+        </a>
+        <p style="margin: 12px 0 0; color: #6b7280; font-size: 13px;">
+          Clique para salvar este evento no seu Google Agenda
+        </p>
+      </div>
+
+      <div style="margin-top: 24px; padding: 20px; background-color: #dbeafe; border-radius: 12px; border: 1px solid #93c5fd;">
+        <p style="margin: 0; color: #1e40af; font-size: 14px; text-align: center;">
+          📱 No dia e horário do evento, você receberá um link com QR Code para confirmar sua presença na reunião.
+        </p>
+      </div>
+    `;
+
+    const html = this.generateEmailTemplate(
+      'Notificação de Evento',
+      content,
+      statusColor,
+      roomColor,
+      booking.room_name,
+    );
+
+    return {
+      subject: `📋 Notificação de Evento: ${booking.finalidade} - ${getRoomLabel(booking.room_name)}`,
+      html,
+    };
+  }
+
+  private buildExternalParticipantEmail(
+    booking: Booking,
+    participantName?: string | null,
+  ): {
+    subject: string;
+    html: string;
+  } {
+    const statusColor = STATUS_COLORS.approved;
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+
+    // Define o local baseado na sala
+    let location: string;
+    if (booking.room_name === 'escola_fazendaria') {
+      location = booking.local || 'Escola Fazendária - SEGET';
+    } else {
+      location = 'Rua Álvares de Castro, 272 - Maricá/RJ';
+    }
+
+    const googleCalendarLink = this.generateGoogleCalendarLink(booking);
+    const formattedDates = booking.dates.map(formatDate).join(', ');
+
+    const greeting = participantName
+      ? `Olá, ${participantName}! 👋`
+      : 'Olá! 👋';
+
+    const content = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
+          ${greeting}
+        </h2>
+        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+          Você é participante de um evento na <strong style="color: ${roomColor};">${getRoomLabel(booking.room_name)}</strong>. Leia abaixo informações referentes ao agendamento.
+        </p>
+      </div>
+
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
+          📋 Informações do Evento
+        </h2>
+        <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f0fdf4; border-radius: 12px; overflow: hidden; border: 1px solid #d1fae5;">
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">🏢 Sala</span><br>
+              <span style="color: ${roomColor}; font-size: 15px; font-weight: 600;">${getRoomLabel(booking.room_name)}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">📍 Local</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${location}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">📅 Data(s)</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${formattedDates}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
+              <span style="color: #065f46; font-size: 13px;">🕐 Horário</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.hora_inicio} às ${booking.hora_fim}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px;">
+              <span style="color: #065f46; font-size: 13px;">👤 Solicitante</span><br>
+              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.nome_completo}</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Botão Google Calendar -->
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${googleCalendarLink}" target="_blank" style="display: inline-block; padding: 14px 32px; background-color: #4285f4; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 600; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">
+          📅 Adicionar ao Google Agenda
+        </a>
+        <p style="margin: 12px 0 0; color: #6b7280; font-size: 13px;">
+          Clique para salvar este evento no seu Google Agenda
+        </p>
+      </div>
+
+      <div style="margin-top: 24px; padding: 20px; background-color: #dbeafe; border-radius: 12px; border: 1px solid #93c5fd;">
+        <p style="margin: 0; color: #1e40af; font-size: 14px; text-align: center;">
+          📱 No dia e horário do evento, você receberá um link com QR Code para confirmar sua presença na reunião.
+        </p>
+      </div>
+    `;
+
+    const html = this.generateEmailTemplate(
+      'Notificação de Evento',
+      content,
+      statusColor,
+      roomColor,
+      booking.room_name,
+    );
+
+    return {
+      subject: `📋 Notificação de Evento: ${booking.finalidade} - ${getRoomLabel(booking.room_name)}`,
+      html,
+    };
+  }
+
   // Gera o template base do e-mail estilizado
   private generateEmailTemplate(
     title: string,
@@ -649,96 +876,30 @@ export class MailService {
     participantEmail: string,
     frontendUrl: string,
   ) {
-    const statusColor = STATUS_COLORS.approved;
-    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
-
-    // Define o local baseado na sala
-    let location: string;
-    if (booking.room_name === 'escola_fazendaria') {
-      location = booking.local || 'Escola Fazendária - SEGET';
-    } else {
-      location = 'Rua Álvares de Castro, 272 - Maricá/RJ';
-    }
-
-    const googleCalendarLink = this.generateGoogleCalendarLink(booking);
-    const formattedDates = booking.dates.map(formatDate).join(', ');
-
-    const content = `
-      <div style="margin-bottom: 24px;">
-        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
-          Notificação de Evento 📋
-        </h2>
-        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
-          Você é participante de um evento na <strong style="color: ${roomColor};">${getRoomLabel(booking.room_name)}</strong>. Leia abaixo informações referentes ao agendamento.
-        </p>
-      </div>
-
-      <div style="margin-bottom: 24px;">
-        <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
-          📋 Informações do Evento
-        </h2>
-        <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f0fdf4; border-radius: 12px; overflow: hidden; border: 1px solid #d1fae5;">
-          <tr>
-            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
-              <span style="color: #065f46; font-size: 13px;">🏢 Sala</span><br>
-              <span style="color: ${roomColor}; font-size: 15px; font-weight: 600;">${getRoomLabel(booking.room_name)}</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
-              <span style="color: #065f46; font-size: 13px;">📍 Local</span><br>
-              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${location}</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
-              <span style="color: #065f46; font-size: 13px;">📅 Data(s)</span><br>
-              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${formattedDates}</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
-              <span style="color: #065f46; font-size: 13px;">🕐 Horário</span><br>
-              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.hora_inicio} às ${booking.hora_fim}</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 12px 16px;">
-              <span style="color: #065f46; font-size: 13px;">👤 Solicitante</span><br>
-              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.nome_completo}</span>
-            </td>
-          </tr>
-        </table>
-      </div>
-
-      <!-- Botão Google Calendar -->
-      <div style="text-align: center; margin: 32px 0;">
-        <a href="${googleCalendarLink}" target="_blank" style="display: inline-block; padding: 14px 32px; background-color: #4285f4; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 600; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">
-          📅 Adicionar ao Google Agenda
-        </a>
-        <p style="margin: 12px 0 0; color: #6b7280; font-size: 13px;">
-          Clique para salvar este evento no seu Google Agenda
-        </p>
-      </div>
-
-      <div style="margin-top: 24px; padding: 20px; background-color: #dbeafe; border-radius: 12px; border: 1px solid #93c5fd;">
-        <p style="margin: 0; color: #1e40af; font-size: 14px; text-align: center;">
-          📱 No dia e horário do evento, você receberá um link com QR Code para confirmar sua presença na reunião.
-        </p>
-      </div>
-    `;
-
-    const html = this.generateEmailTemplate(
-      'Notificação de Evento',
-      content,
-      statusColor,
-      roomColor,
-      booking.room_name,
-    );
+    const { subject, html } = this.buildApprovalEmailForParticipants(booking);
 
     await this.mailerService.sendMail({
       to: participantEmail,
-      subject: `📋 Notificação de Evento: ${booking.finalidade} - ${getRoomLabel(booking.room_name)}`,
+      subject,
+      html,
+    });
+  }
+
+  async sendApprovalEmailToParticipants(
+    booking: Booking,
+    participantEmails: string[],
+    frontendUrl: string,
+  ) {
+    if (!participantEmails || participantEmails.length === 0) {
+      return;
+    }
+
+    const { subject, html } = this.buildApprovalEmailForParticipants(booking);
+    const recipients = this.buildRecipientFields(participantEmails);
+
+    await this.mailerService.sendMail({
+      ...recipients,
+      subject,
       html,
     });
   }
@@ -1126,96 +1287,49 @@ export class MailService {
     booking: Booking,
     participant: any, // ExternalParticipant entity
   ) {
-    const statusColor = STATUS_COLORS.approved;
-    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
-
-    // Define o local baseado na sala
-    let location: string;
-    if (booking.room_name === 'escola_fazendaria') {
-      location = booking.local || 'Escola Fazendária - SEGET';
-    } else {
-      location = 'Rua Álvares de Castro, 272 - Maricá/RJ';
-    }
-
-    const googleCalendarLink = this.generateGoogleCalendarLink(booking);
-    const formattedDates = booking.dates.map(formatDate).join(', ');
-
-    const content = `
-      <div style="margin-bottom: 24px;">
-        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
-          Olá, ${participant.full_name}! 👋
-        </h2>
-        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
-          Você é participante de um evento na <strong style="color: ${roomColor};">${getRoomLabel(booking.room_name)}</strong>. Leia abaixo informações referentes ao agendamento.
-        </p>
-      </div>
-
-      <div style="margin-bottom: 24px;">
-        <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px; font-weight: 600;">
-          📋 Informações do Evento
-        </h2>
-        <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f0fdf4; border-radius: 12px; overflow: hidden; border: 1px solid #d1fae5;">
-          <tr>
-            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
-              <span style="color: #065f46; font-size: 13px;">🏢 Sala</span><br>
-              <span style="color: ${roomColor}; font-size: 15px; font-weight: 600;">${getRoomLabel(booking.room_name)}</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
-              <span style="color: #065f46; font-size: 13px;">📍 Local</span><br>
-              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${location}</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
-              <span style="color: #065f46; font-size: 13px;">📅 Data(s)</span><br>
-              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${formattedDates}</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 12px 16px; border-bottom: 1px solid #d1fae5;">
-              <span style="color: #065f46; font-size: 13px;">🕐 Horário</span><br>
-              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.hora_inicio} às ${booking.hora_fim}</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 12px 16px;">
-              <span style="color: #065f46; font-size: 13px;">👤 Solicitante</span><br>
-              <span style="color: #065f46; font-size: 15px; font-weight: 500;">${booking.nome_completo}</span>
-            </td>
-          </tr>
-        </table>
-      </div>
-
-      <!-- Botão Google Calendar -->
-      <div style="text-align: center; margin: 32px 0;">
-        <a href="${googleCalendarLink}" target="_blank" style="display: inline-block; padding: 14px 32px; background-color: #4285f4; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 600; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">
-          📅 Adicionar ao Google Agenda
-        </a>
-        <p style="margin: 12px 0 0; color: #6b7280; font-size: 13px;">
-          Clique para salvar este evento no seu Google Agenda
-        </p>
-      </div>
-
-      <div style="margin-top: 24px; padding: 20px; background-color: #dbeafe; border-radius: 12px; border: 1px solid #93c5fd;">
-        <p style="margin: 0; color: #1e40af; font-size: 14px; text-align: center;">
-          📱 No dia e horário do evento, você receberá um link com QR Code para confirmar sua presença na reunião.
-        </p>
-      </div>
-    `;
-
-    const html = this.generateEmailTemplate(
-      'Notificação de Evento',
-      content,
-      statusColor,
-      roomColor,
-      booking.room_name,
+    const { subject, html } = this.buildExternalParticipantEmail(
+      booking,
+      participant?.full_name,
     );
 
     await this.mailerService.sendMail({
       to: participant.email,
-      subject: `📋 Notificação de Evento: ${booking.finalidade} - ${getRoomLabel(booking.room_name)}`,
+      subject,
+      html,
+    });
+  }
+
+  async sendExternalParticipantsNotification(
+    booking: Booking,
+    participants: Array<{ email?: string | null; full_name?: string | null }>,
+  ) {
+    if (!participants || participants.length === 0) {
+      return;
+    }
+
+    const emails = participants
+      .map((participant) => participant?.email || '')
+      .filter(Boolean);
+
+    if (emails.length === 0) {
+      return;
+    }
+
+    const recipients = this.buildRecipientFields(emails);
+    const primary = participants.find(
+      (participant) =>
+        participant?.email && participant.email.trim() === recipients.to,
+    );
+    const displayName = recipients.cc ? null : primary?.full_name || null;
+
+    const { subject, html } = this.buildExternalParticipantEmail(
+      booking,
+      displayName,
+    );
+
+    await this.mailerService.sendMail({
+      ...recipients,
+      subject,
       html,
     });
   }

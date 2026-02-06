@@ -282,28 +282,8 @@ export class BookingsService {
             );
           }
 
-          // 4. Envia e-mail para participantes externos (se houver)
-          if (
-            createBookingDto.externalParticipants &&
-            createBookingDto.externalParticipants.length > 0
-          ) {
-            const bookingWithExternal = await this.bookingRepository.findOne({
-              where: { id: savedBooking.id },
-              relations: ['external_participants'],
-            });
-
-            if (
-              bookingWithExternal &&
-              bookingWithExternal.external_participants
-            ) {
-              for (const participant of bookingWithExternal.external_participants) {
-                await this.mailService.sendExternalParticipantNotification(
-                  bookingWithExternal,
-                  participant,
-                );
-              }
-            }
-          }
+          // OBS: E-mails para participantes (SEGET e externos) são enviados
+          // apenas quando o agendamento for APROVADO (via admin.service.ts)
         } catch (emailError) {
           console.error('Erro ao enviar e-mails de notificação:', emailError);
           // Não falha a requisição por causa de erro de e-mail

@@ -354,13 +354,11 @@ export class AdminService {
 
     // Envia e-mail estilizado para todos os participantes SEGET com link do Google Calendar
     if (booking.participantes && booking.participantes.length > 0) {
-      for (const email of booking.participantes) {
-        await this.mailService.sendApprovalEmailToParticipant(
-          booking,
-          email,
-          this.frontendUrl,
-        );
-      }
+      await this.mailService.sendApprovalEmailToParticipants(
+        booking,
+        booking.participantes,
+        this.frontendUrl,
+      );
     }
 
     // Envia e-mail para participantes externos com QR code
@@ -368,12 +366,10 @@ export class AdminService {
       booking.external_participants &&
       booking.external_participants.length > 0
     ) {
-      for (const participant of booking.external_participants) {
-        await this.mailService.sendExternalParticipantNotification(
-          booking,
-          participant,
-        );
-      }
+      await this.mailService.sendExternalParticipantsNotification(
+        booking,
+        booking.external_participants,
+      );
     }
   }
 
@@ -585,13 +581,11 @@ export class AdminService {
 
     // Aprovado - para participantes SEGET:
     if (approvedBooking.participantes && approvedBooking.participantes.length > 0) {
-      for (const email of approvedBooking.participantes) {
-        await this.mailService.sendApprovalEmailToParticipant(
-          approvedBooking,
-          email,
-          this.frontendUrl,
-        );
-      }
+      await this.mailService.sendApprovalEmailToParticipants(
+        approvedBooking,
+        approvedBooking.participantes,
+        this.frontendUrl,
+      );
     }
 
     // Aprovado - para participantes externos:
@@ -599,12 +593,10 @@ export class AdminService {
       approvedBooking.external_participants &&
       approvedBooking.external_participants.length > 0
     ) {
-      for (const participant of approvedBooking.external_participants) {
-        await this.mailService.sendExternalParticipantNotification(
-          approvedBooking,
-          participant,
-        );
-      }
+      await this.mailService.sendExternalParticipantsNotification(
+        approvedBooking,
+        approvedBooking.external_participants,
+      );
     }
 
     // Rejeitado - para solicitante:
