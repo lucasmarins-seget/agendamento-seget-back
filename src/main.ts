@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import type { Request, Response, NextFunction } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -9,7 +10,6 @@ async function bootstrap() {
     origin: [
       'http://agendamento.127.0.0.1.nip.io',
       'http://agendamento.segetmarica.cloud',
-      'http://localhost:8080',
       'http://localhost:8081',
       'http://127.0.0.1:8081',
     ],
@@ -17,7 +17,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.use((req, res, next) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
