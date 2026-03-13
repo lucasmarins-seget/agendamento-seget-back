@@ -19,6 +19,7 @@ const STATUS_COLORS: Record<
   em_analise: { bg: '#dbeafe', text: '#1e40af', border: '#3b82f6' },
   approved: { bg: '#d1fae5', text: '#065f46', border: '#10b981' },
   rejected: { bg: '#fee2e2', text: '#991b1b', border: '#ef4444' },
+  canceled: { bg: '#f3f4f6', text: '#374151', border: '#9ca3af' },
 };
 
 // Labels de status
@@ -27,6 +28,7 @@ const STATUS_LABELS: Record<string, string> = {
   em_analise: 'Em Análise',
   approved: 'Aprovado',
   rejected: 'Rejeitado',
+  canceled: 'Cancelado',
 };
 
 // Cores por sala
@@ -951,6 +953,55 @@ export class MailService {
     await this.mailerService.sendMail({
       to: booking.email,
       subject: `❌ Agendamento Rejeitado - ${getRoomLabel(booking.room_name)}`,
+      html,
+    });
+  }
+
+  // E-mail de CANCELAMENTO estilizado para o solicitante
+  async sendCancellationEmailStyled(booking: Booking) {
+    const statusColor = STATUS_COLORS.canceled;
+    const roomColor = ROOM_COLORS[booking.room_name] || '#6366f1';
+
+    const content = `
+      <div style="margin-bottom: 24px;">
+        <h2 style="margin: 0 0 12px; color: #111827; font-size: 20px; font-weight: 600;">
+          Olá, ${booking.nome_completo}.
+        </h2>
+        <p style="margin: 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+          O seu agendamento foi <strong style="color: ${statusColor.text};">CANCELADO</strong> pela administração.
+        </p>
+      </div>
+
+      ${booking.cancellation_reason
+        ? `
+      <div style="margin-bottom: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 12px; border-left: 4px solid #9ca3af;">
+        <p style="margin: 0 0 8px; color: #374151; font-size: 13px; font-weight: 600;">📝 Motivo do Cancelamento:</p>
+        <p style="margin: 0; color: #374151; font-size: 14px;">${booking.cancellation_reason}</p>
+      </div>
+      `
+        : ''
+      }
+
+      ${this.generateBookingInfoSection(booking, false)}
+
+      <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-radius: 12px;">
+        <p style="margin: 0; color: #4b5563; font-size: 14px; text-align: center;">
+          Caso tenha dúvidas sobre este cancelamento, entre em contato com a administração.
+        </p>
+      </div>
+    `;
+
+    const html = this.generateEmailTemplate(
+      'Agendamento Cancelado',
+      content,
+      statusColor,
+      roomColor,
+      booking.room_name,
+    );
+
+    await this.mailerService.sendMail({
+      to: booking.email,
+      subject: `⚠️ Agendamento Cancelado - ${getRoomLabel(booking.room_name)}`,
       html,
     });
   }

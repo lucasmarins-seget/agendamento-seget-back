@@ -22,6 +22,7 @@ import { ApprovePartialBookingDto } from './dto/approve-partial-booking.dto';
 import * as bcrypt from 'bcrypt';
 import { MailService } from 'src/mail/mail.service';
 import PDFDocument from 'pdfkit';
+import { CancelBookingDto } from './dto/cancel-booking.dto';
 
 // O 'user' que recebemos é o payload do token
 type AdminUserPayload = {
@@ -181,7 +182,7 @@ export class AdminService {
   // GET /api/admin/bookings
   async findAll(pagination: any, filters: any, user: AdminUserPayload) {
     const { page, limit } = pagination;
-    const statuses = ['pending', 'approved', 'rejected', 'em_analise'];
+    const statuses = ['pending', 'approved', 'rejected', 'em_analise', 'canceled'];
 
     const resultsByStatus = {};
 
@@ -647,6 +648,53 @@ export class AdminService {
     };
   }
 
+  // PATCH /api/admin/bookings/:id/cancel
+  async cancel(
+    id: string,
+    cancelBookingDto: CancelBookingDto,
+    user: AdminUserPayload,
+  ) {
+    const booking = await this.bookingRepository.findOne({
+      where: { id },
+      relations: ['external_participants'],
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Agendamento não encontrado');
+    }
+    
+    this.checkPermission(booking, user);
+
+    // REGRA DE NEGÓCIO: Não pode cancelar se já estiver recusado
+    if (booking.status === 'rejected') {
+      throw new ConflictException('Não é possível cancelar um agendamento que já foi recusado.');
+    }
+
+    booking.status = 'canceled';
+    booking.canceled_by = user.email;
+    booking.canceled_at = new Date();
+    booking.cancellation_reason = cancelBookingDto.reason ?? null;
+
+    const savedBooking = await this.bookingRepository.save(booking);
+
+    // Envia e-mail de cancelamento de forma assíncrona
+    this.mailService.sendCancellationEmailStyled(savedBooking).catch((error) => {
+      console.error('Erro ao enviar e-mail de cancelamento (background):', error);
+    });
+
+    return {
+      success: true,
+      message: 'Agendamento cancelado com sucesso',
+      booking: {
+        id: savedBooking.id,
+        status: savedBooking.status,
+        canceledBy: savedBooking.canceled_by,
+        canceledAt: savedBooking.canceled_at,
+        cancellationReason: savedBooking.cancellation_reason,
+      },
+    };
+  }
+
   // PUT /api/admin/bookings/:id
   async update(
     id: string,
@@ -1099,6 +1147,10 @@ export class AdminService {
       );
       const emAnaliseBookings = allBookingsForSummary.filter(
         (b) => b.status === 'em_analise',
+      );
+
+      const canceledBookings = allBookingsForSummary.filter(
+        (b) => b.status === 'canceled',
       );
 
       // Reservas de hoje (booking com data de hoje)

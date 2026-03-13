@@ -26,6 +26,7 @@ import { UpdateAdminDto } from './dto/update-admin.dto';
 import { AnalyzeBookingDto } from './dto/analyze-booking.dto';
 import { ApprovePartialBookingDto } from './dto/approve-partial-booking.dto';
 import { ApproveBookingDto } from './dto/approve-booking.dto';
+import { CancelBookingDto } from './dto/cancel-booking.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('admin')
@@ -139,6 +140,16 @@ export class AdminController {
     @Request() request,
   ) {
     return this.adminService.reject(id, rejectBookingDto, request.user);
+  }
+
+  @Patch('bookings/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() cancelBookingDto: CancelBookingDto,
+    @Request() request,
+  ) {
+    return this.adminService.cancel(id, cancelBookingDto, request.user);
   }
 
   @Put('bookings/:id')

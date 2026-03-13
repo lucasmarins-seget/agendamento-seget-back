@@ -21,7 +21,7 @@ export class Booking {
   tipo_reserva: string;
 
   @Column({ type: 'varchar', length: 50, default: 'pending' })
-  status: string; // 'pending', 'approved', 'rejected', 'em_analise'
+  status: string; // 'pending', 'approved', 'rejected', 'em_analise', 'canceled'
 
   // --- Solicitante ---
   @Column({ type: 'varchar', length: 255 })
@@ -122,6 +122,15 @@ export class Booking {
 
   @Column({ type: 'text', nullable: true })
   rejection_reason: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  canceled_by: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  canceled_at: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  cancellation_reason: string | null;
 
   @OneToMany(() => AttendanceRecord, (record) => record.booking)
   attendance_records: AttendanceRecord[];
