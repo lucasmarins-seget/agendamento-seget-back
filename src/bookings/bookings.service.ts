@@ -15,7 +15,6 @@ import {
   In,
   LessThan,
   MoreThan,
-  Not,
 } from 'typeorm';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { MailService } from 'src/mail/mail.service';
@@ -24,6 +23,12 @@ import { AdminUser } from 'src/entities/admin-user.entity';
 
 @Injectable()
 export class BookingsService {
+  private readonly blockingStatuses = [
+    'pending',
+    'approved',
+    'em_analise',
+  ] as const;
+
   constructor(
     @InjectRepository(Booking)
     private readonly bookingRepository: Repository<Booking>,
@@ -194,7 +199,7 @@ export class BookingsService {
           where: {
             room_name,
             dates: Like(`%${dateStr}%`),
-            status: Not('rejected'), // Qualquer status (pending, approved) bloqueia
+            status: In(this.blockingStatuses),
           },
         });
 
@@ -474,7 +479,7 @@ export class BookingsService {
       where: {
         room_name,
         dates: Like(`%${date}%`),
-        status: Not('rejected'),
+        status: In(this.blockingStatuses),
       },
       select: ['dates', 'hora_inicio', 'hora_fim'],
     });
