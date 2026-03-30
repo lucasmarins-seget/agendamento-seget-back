@@ -9,7 +9,7 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       'http://agendamento.127.0.0.1.nip.io',
-      'http://agendamento.segetmarica.cloud',
+      'https://agendamento.segetmarica.cloud',
       'http://localhost:8081',
       'http://127.0.0.1:8081',
       'http://localhost:8080',

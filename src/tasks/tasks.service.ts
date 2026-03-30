@@ -86,11 +86,11 @@ export class TasksService {
     // Obter URL do front para o QR Code (definir no .env ou usar valor padrão)
     const configuredFrontendUrl = this.configService.get<string>('FRONTEND_URL');
     const frontendUrl =
-      configuredFrontendUrl || 'http://agendamento.segetmarica.cloud';
+      configuredFrontendUrl || 'https://agendamento.segetmarica.cloud';
 
     if (!configuredFrontendUrl) {
       this.logger.warn(
-        'FRONTEND_URL não configurada. Usando valor padrão http://agendamento.segetmarica.cloud',
+        'FRONTEND_URL não configurada. Usando valor padrão https://agendamento.segetmarica.cloud',
       );
     }
 
