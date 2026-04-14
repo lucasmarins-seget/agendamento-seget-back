@@ -1,98 +1,143 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Sistema de Agendamento
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Este projeto consiste em uma plataforma de agendamento com um backend em NestJS e um frontend em React (Vite). O backend é configurado para rodar em um container Docker, enquanto o frontend pode ser executado localmente ou via Docker.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 🚀 Estrutura do Projeto
 
-## Description
+- `agendamento-api/`: Backend construído com NestJS, TypeORM e MySQL.
+- `front-agendamento/`: Frontend construído com React, TypeScript, Tailwind CSS e Shadcn/UI.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+---
 
-## Project setup
+## 📋 Pré-requisitos
 
-```bash
-$ npm install
+Antes de começar, você precisará ter instalado em sua máquina:
+- [Node.js](https://nodejs.org/) (Recomendado v22 ou superior)
+- [Docker](https://www.docker.com/)
+- [NPM](https://www.npmjs.com/) ou [Bun](https://bun.sh/) (para o frontend)
+
+---
+
+## 🛠️ Configuração do Backend (agendamento-api)
+
+O backend utiliza Docker para facilitar o deployment e garantir consistência de ambiente.
+
+### 1. Variáveis de Ambiente
+Crie um arquivo `.env` na pasta `agendamento-api/` com base no seguinte modelo:
+
+```env
+# Configuração do Banco de Dados MySQL
+DB_HOST=seu_host_mysql
+DB_PORT=3306
+DB_USERNAME=seu_usuario
+DB_PASSWORD=sua_senha
+DB_DATABASE=seu_banco
+
+# JWT (Segredo para autenticação)
+JWT_SECRET=seu_segredo_jwt
+
+# NodeMailer (Configuração de e-mail)
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USER=seu_email@gmail.com
+MAIL_PASSWORD=sua_senha_de_app
+
+# URL do Frontend (para CORS)
+FRONTEND_URL=http://localhost:8080
 ```
 
-## Compile and run the project
+### 2. Instalação e Build
+Como o Dockerfile do backend realiza apenas o deploy, você deve gerar o build localmente primeiro:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+cd agendamento-api
+npm install
+npm run build
 ```
 
-## Run tests
+### 3. Rodando com Docker
+Com o build gerado, construa e execute a imagem Docker:
 
 ```bash
-# unit tests
-$ npm run test
+# Construir a imagem
+docker build -t agendamento-api .
 
-# e2e tests
-$ npm run test:e2e
+# Rodar o container
+docker run -d \
+  -p 3001:3001 \
+  --name agendamento-api-container \
+  --env-file .env \
+  agendamento-api
+```
+O backend estará disponível em `http://localhost:3001`.
 
-# test coverage
-$ npm run test:cov
+---
+
+## 💻 Configuração do Frontend (front-agendamento)
+
+O frontend utiliza Vite para um desenvolvimento rápido.
+
+### 1. Variáveis de Ambiente
+Crie um arquivo `.env` na pasta `front-agendamento/`:
+
+```env
+VITE_API_BASE_URL=http://localhost:3001
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### 2. Instalação e Execução (Desenvolvimento)
+Você pode usar `npm` ou `bun`:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+cd front-agendamento
+npm install
+# ou bun install
+
+npm run dev
 ```
+O frontend estará disponível em `http://localhost:8080` (ou na porta indicada no terminal).
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### 3. Build para Produção
+Para gerar os arquivos estáticos para produção:
 
-## Resources
+```bash
+npm run build
+```
+Os arquivos serão gerados na pasta `dist/`.
 
-Check out a few resources that may come in handy when working with NestJS:
+### 4. Rodando com Docker (Opcional)
+Se preferir rodar o frontend via Docker (com Nginx):
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+# Construir a imagem
+docker build -t front-agendamento .
 
-## Support
+# Rodar o container
+docker run -d \
+  -p 8080:80 \
+  --name front-agendamento-container \
+  front-agendamento
+```
+O frontend estará disponível em `http://localhost:8080`.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+---
 
-## Stay in touch
+## 📝 Scripts Disponíveis
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### Backend
+- `npm run start:dev`: Inicia o servidor em modo de desenvolvimento com hot-reload.
+- `npm run build`: Compila o projeto para produção.
+- `npm run test`: Executa os testes unitários.
 
-## License
+### Frontend
+- `npm run dev`: Inicia o servidor de desenvolvimento do Vite.
+- `npm run build`: Gera o build otimizado para produção.
+- `npm run lint`: Verifica erros de linting.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+---
+
+## 🐳 Docker (Resumo)
+
+Se desejar rodar ambos via Docker, certifique-se de que o frontend aponte para a URL correta da API e que as portas estejam devidamente mapeadas.
+
+- **Backend Port:** 3001
+- **Frontend Port:** 8080 (dev) / 80 (nginx docker)
