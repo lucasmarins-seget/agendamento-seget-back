@@ -12,16 +12,19 @@ import { MailService } from './mail.service';
         transport: {
           host: configService.get<string>('MAIL_HOST'),
           port: configService.get<number>('MAIL_PORT', 587),
-          secure: false, // true para porta 465, false para outras
+          secure: configService.get<boolean>('MAIL_SECURE', false), // true apenas na porta 465
+          requireTLS: true, // força STARTTLS na porta 587 (exigido pelo webmail institucional)
           auth: {
             user: configService.get<string>('MAIL_USER'),
             pass: configService.get<string>('MAIL_PASSWORD'),
           },
         },
         defaults: {
-          from: '"Sistema de Agendamento" <nao-responda@seget.com>',
+          from: configService.get<string>(
+            'MAIL_FROM',
+            '"Portal SEGET" <cienciadados.seget@marica.rj.gov.br>',
+          ),
         },
-        // TODO: Configurar templates de e-mail (Handlebars, etc)
       }),
     }),
   ],
