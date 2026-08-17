@@ -12,7 +12,7 @@ import { MailService } from './mail.service';
         transport: {
           host: configService.get<string>('MAIL_HOST'),
           port: configService.get<number>('MAIL_PORT', 587),
-          secure: configService.get<boolean>('MAIL_SECURE', false), // true apenas na porta 465
+          secure: false, // porta 465 usaria true; a 587 usa STARTTLS (abaixo)
           requireTLS: true, // força STARTTLS na porta 587 (exigido pelo webmail institucional)
           auth: {
             user: configService.get<string>('MAIL_USER'),
